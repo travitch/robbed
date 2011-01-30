@@ -1,6 +1,7 @@
 module Data.ROBDD.Strict ( BDD(..)
                          , mk
                          , apply
+                         , restrict
                          ) where
 
 import Control.Monad.State
@@ -156,3 +157,29 @@ apply op (ROBDD _ _ bdd1) (ROBDD _ _ bdd2) =
         toBool One = Just True
         toBool Zero = Just False
         toBool _ = Nothing
+
+restrict :: ROBDD -> Var -> Bool -> ROBDD
+restrict bdd@(ROBDD _ _ Zero) _ _ = bdd
+restrict bdd@(ROBDD _ _ One) _ _ = bdd
+restrict (ROBDD revMap idSrc bdd) v b =
+  let (r,s) = runState (restrict' bdd) emptyBDDState { bddIdSource = idSrc
+                                                     , bddRevMap = revMap
+                                                     }
+  in ROBDD (bddRevMap s) (bddIdSource s) r
+  where restrict' Zero = return Zero
+        restrict' One = return One
+        restrict' o@(BDD low var high uid) = do
+          mem <- getMemoNode uid
+          case mem of
+            Just node -> return node
+            Nothing -> case var `compare` v of
+              GT -> return o
+              LT -> do
+                low' <- restrict' low
+                high' <- restrict' high
+                n <- mk var low' high'
+                memoNode uid n
+                return n
+              EQ -> case b of
+                True -> restrict' high
+                False -> restrict' low
