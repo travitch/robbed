@@ -81,18 +81,7 @@ mk v low high = do
       -- Make a new node
       Nothing -> revInsert v low high
 
-type ApplyCache = Map (NodeId, NodeId) BDD
-
-applyCacheLookup :: BDD -> BDD -> ApplyCache -> Maybe BDD
-applyCacheLookup (BDD _ _ _ id1) (BDD _ _ _ id2) ac =
-  M.lookup (id1, id2) ac
-applyCacheLookup _ _ _ = error "Zero and One are not allowed in applyCacheLookup"
-
-toBool :: BDD -> Maybe Bool
-toBool One = Just True
-toBool Zero = Just False
-toBool _ = Nothing
-
+-- A helper to memoize BDD nodes
 memoNode :: (Eq a, Hashable a) => a -> BDD -> BDDContext a ()
 memoNode key val = do
   s <- get
@@ -100,6 +89,13 @@ memoNode key val = do
       memoTable' = M.insert key val memoTable
 
   put s { bddMemoTable = memoTable' }
+
+getMemoNode :: (Eq a, Hashable a) => a -> BDDContext a (Maybe BDD)
+getMemoNode key = do
+  s <- get
+  let memoTable = bddMemoTable s
+
+  return $ M.lookup key memoTable
 
 -- | Construct a new BDD by applying the provided binary operator
 -- to the two input BDDs
@@ -111,16 +107,22 @@ apply op (ROBDD _ _ bdd1) (ROBDD _ _ bdd2) =
   let (bdd, s) = runState (appCachedOrBase bdd1 bdd2) emptyBDDState
   in ROBDD (bddRevMap s) (bddIdSource s) bdd
   where appCachedOrBase :: BDD -> BDD -> BDDContext (NodeId, NodeId) BDD
-        appCachedOrBase lhs rhs = do
-          s <- get
-          let appCache = bddMemoTable s
+        appCachedOrBase lhs@(BDD _ _ _ id1) rhs@(BDD _ _ _ id2) = do
+          memNode <- getMemoNode (id1, id2)
 
-          case applyCacheLookup lhs rhs appCache of
+          case memNode of
             Just cachedVal -> return cachedVal
             Nothing -> case maybeApply lhs rhs of
               Just True -> return One
               Just False -> return Zero
               Nothing -> appRec lhs rhs
+        -- If we don't match both as BDDs, it couldn't have been cached.
+        -- Again, is this actually true?
+        appCachedOrBase lhs rhs = do
+          case maybeApply lhs rhs of
+            Just True -> return One
+            Just False -> return Zero
+            Nothing -> appRec lhs rhs
         -- FIXME? Is it the case that we cannot have a terminal compared against
         -- a nonterminal here?
         appRec :: BDD -> BDD -> BDDContext (NodeId, NodeId) BDD
@@ -149,3 +151,8 @@ apply op (ROBDD _ _ bdd1) (ROBDD _ _ bdd2) =
           b1 <- toBool lhs
           b2 <- toBool rhs
           return $ b1 `op` b2
+
+        toBool :: BDD -> Maybe Bool
+        toBool One = Just True
+        toBool Zero = Just False
+        toBool _ = Nothing
