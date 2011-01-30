@@ -219,6 +219,14 @@ neg (ROBDD _ _ bdd) =
 anySat :: ROBDD -> Maybe ([(Var, Bool)])
 anySat (ROBDD _ _ Zero) = Nothing
 anySat (ROBDD _ _ One) = Just []
+-- FIXME: Might need to make sat' strict in the accumulator
+anySat (ROBDD _ _ bdd) = Just $ sat' bdd []
+  where sat' One acc = acc
+        sat' Zero _ = error "anySat should not hit Zero"
+        sat' (BDD low v high _) acc =
+          case low of
+            Zero -> (v, True) : sat' high acc
+            _ -> (v, False) : sat' low acc
 
 
 -- | The MK operation.  Re-use an existing BDD node if possible.
