@@ -3,11 +3,15 @@ module Data.ROBDD.Strict ( BDD(..)
                          , apply
                          ) where
 
+import Control.Monad.State
 import Data.HamtMap (HamtMap)
 import qualified Data.HamtMap as M
+import Data.Hashable
+
+type Map = HamtMap
 
 -- type NodeMap = HamtMap NodeId BDD
-type RevMap = HamtMap (Var, NodeId, NodeId) BDD
+type RevMap = Map (Var, NodeId, NodeId) BDD
 
 type NodeId = Int
 type Var = Int
@@ -18,12 +22,7 @@ data BDD = BDD BDD Var BDD NodeId
          | One
 
 -- Accessible wrapper
-data ROBDD = ROBDD RevMap BDD
-
--- instance Hashable BDD where
---   hash Zero = hash 0
---   hash One = hash 1
---   hash (BDD low v high _) = (hash low) `combine` (hash v) `combine` (hash high)
+data ROBDD = ROBDD RevMap [Int] BDD
 
 instance Eq BDD where
   Zero == Zero = True
@@ -31,36 +30,58 @@ instance Eq BDD where
   (BDD _ _ _ id1) == (BDD _ _ _ id2) = id1 == id2
   _ == _ = False
 
--- Lets have IDs start at 2, since Zero and One are logically taken
-newIdSource :: [Int]
-newIdSource = [2..]
+data BDDState a = BDDState { bddRevMap :: RevMap
+                           , bddIdSource :: [Int]
+                           , bddMemoTable :: Map a BDD
+                           }
+type BDDContext a b = State (BDDState a) b
 
-revLookup :: Var -> BDD -> BDD -> RevMap -> Maybe BDD
-revLookup v (BDD _ _ _ leftId) (BDD _ _ _ rightId) h =
-  M.lookup (v, leftId, rightId) h
-revLookup _ _ _ _ = error "Zero and One are not allowed in revLookup"
+revLookup :: Var -> BDD -> BDD -> RevMap -> (Maybe BDD)
+revLookup v (BDD _ _ _ leftId) (BDD _ _ _ rightId) revMap = do
+  M.lookup (v, leftId, rightId) revMap
+revLookup _ _ _ _ = error "Zero and One can never be in the RevMap"
 
-revInsert :: Var -> BDD -> BDD -> BDD -> RevMap -> RevMap
-revInsert v (BDD _ _ _ lowId) (BDD _ _ _ highId) newNode h =
-  M.insert (v, lowId, highId) newNode h
-revInsert _ _ _ _ _ = error "Zero and One are not allowed in revInsert"
+-- Create a new node for v with the given high and low edges.
+-- Insert it into the revMap and return it.
+revInsert :: Var -> BDD -> BDD -> BDDContext a BDD
+revInsert v b1@(BDD _ _ _ lowId) b2@(BDD _ _ _ highId) = do
+  s <- get
+  let revMap = bddRevMap s
+      (nodeId:rest) = bddIdSource s
+      revMap' = M.insert (v, lowId, highId) newNode revMap
+      newNode = BDD b1 v b2 nodeId
+  put $ s { bddRevMap = revMap'
+          , bddIdSource = rest }
+
+  return newNode
+
+revInsert _ _ _ = error "Zero and one cannot be RevMap keys"
+
+-- Start IDs at 2, since Zero and One are conceptually taken
+emptyBDDState :: (Eq a, Hashable a) => BDDState a
+emptyBDDState = BDDState { bddRevMap = M.empty
+                         , bddIdSource = [2..]
+                         , bddMemoTable = M.empty
+                         }
 
 -- | The MK operation.  Re-use an existing BDD node if possible.
 -- Otherwise create a new node with the provided NodeId, updating the
 -- tables.
-mk :: RevMap -> [NodeId] -> Var -> BDD -> BDD ->
-      (BDD, RevMap, [NodeId])
-mk revMap ids@(thisId:rest) v low high =
-  if low == high then (low, revMap, ids) -- Inputs identical, re-use
-  else case revLookup v low high revMap of
-    Just node -> (node, revMap, ids) -- Return existing node
-    -- Make a new node
-    Nothing -> (newNode, revMap', rest)
-  where newNode = BDD low v high thisId
-        revMap' = revInsert v low high newNode revMap
+mk :: Var -> BDD -> BDD -> BDDContext a BDD
+mk v low high = do
+  s <- get
 
+  let revMap = bddRevMap s
 
-type ApplyCache = HamtMap (NodeId, NodeId) BDD
+  if low == high
+    then return low -- Inputs identical, re-use
+    else case revLookup v low high revMap of
+      -- Return existing node
+      Just node -> return node
+      -- Make a new node
+      Nothing -> revInsert v low high
+
+type ApplyCache = Map (NodeId, NodeId) BDD
 
 applyCacheLookup :: BDD -> BDD -> ApplyCache -> Maybe BDD
 applyCacheLookup (BDD _ _ _ id1) (BDD _ _ _ id2) ac =
@@ -72,42 +93,58 @@ toBool One = Just True
 toBool Zero = Just False
 toBool _ = Nothing
 
+memoNode :: (Eq a, Hashable a) => a -> BDD -> BDDContext a ()
+memoNode key val = do
+  s <- get
+  let memoTable = bddMemoTable s
+      memoTable' = M.insert key val memoTable
+
+  put s { bddMemoTable = memoTable' }
+
 -- | Construct a new BDD by applying the provided binary operator
 -- to the two input BDDs
 --
 -- Note: the reverse node maps of each input BDD are ignored because
 -- we need to build a new one on the fly for the result BDD.
 apply :: (Bool -> Bool -> Bool) -> ROBDD -> ROBDD -> ROBDD
-apply op (ROBDD _ bdd1) (ROBDD _ bdd2) =
-  let (res, rmap, _, _) = appCachedOrBase M.empty M.empty newIdSource bdd1 bdd2
-  in ROBDD rmap res
-  where appCachedOrBase revMap appCache idSource lhs rhs =
+apply op (ROBDD _ _ bdd1) (ROBDD _ _ bdd2) =
+  let (bdd, s) = runState (appCachedOrBase bdd1 bdd2) emptyBDDState
+  in ROBDD (bddRevMap s) (bddIdSource s) bdd
+  where appCachedOrBase :: BDD -> BDD -> BDDContext (NodeId, NodeId) BDD
+        appCachedOrBase lhs rhs = do
+          s <- get
+          let appCache = bddMemoTable s
+
           case applyCacheLookup lhs rhs appCache of
-            Just cachedVal -> (cachedVal, revMap, appCache, idSource)
+            Just cachedVal -> return cachedVal
             Nothing -> case maybeApply lhs rhs of
-              Just True -> (One, revMap, appCache, idSource)
-              Just False -> (Zero, revMap, appCache, idSource)
-              Nothing -> appRec revMap appCache idSource lhs rhs
+              Just True -> return One
+              Just False -> return Zero
+              Nothing -> appRec lhs rhs
         -- FIXME? Is it the case that we cannot have a terminal compared against
         -- a nonterminal here?
-        appRec revMap appCache idSource lhs@(BDD low1 var1 high1 uid1) rhs@(BDD low2 var2 high2 uid2) =
-          let ((newNode, revMap', idSrc'), cache') =
-                case var1 `compare` var2 of
+        appRec :: BDD -> BDD -> BDDContext (NodeId, NodeId) BDD
+        appRec lhs@(BDD low1 var1 high1 uid1) rhs@(BDD low2 var2 high2 uid2) = do
+          newNode <- case var1 `compare` var2 of
                   -- Vars are the same
-                  EQ -> let (newLowNode, revMap1, cache1, idSrc1) = appCachedOrBase revMap appCache idSource low1 low2
-                            (newHighNode, revMap2, cache2, idSrc2) = appCachedOrBase revMap1 cache1 idSrc1 high1 high2
-                        in (mk revMap2 idSrc2 var1 newLowNode newHighNode, cache2)
+                  EQ -> do
+                    newLowNode <- appCachedOrBase low1 low2
+                    newHighNode <- appCachedOrBase high1 high2
+                    mk var1 newLowNode newHighNode
                   -- Var1 is less than var2
-                  LT -> let (newLowNode, revMap1, cache1, idSrc1) = appCachedOrBase revMap appCache idSource low1 rhs
-                            (newHighNode, revMap2, cache2, idSrc2) = appCachedOrBase revMap1 cache1 idSrc1 high1 rhs
-                        in (mk revMap2 idSrc2 var1 newLowNode newHighNode, cache2)
+                  LT -> do
+                    newLowNode <- appCachedOrBase low1 rhs
+                    newHighNode <- appCachedOrBase high1 rhs
+                    mk var1 newLowNode newHighNode
                   -- Var1 is greater than v2
-                  GT -> let (newLowNode, revMap1, cache1, idSrc1) = appCachedOrBase revMap appCache idSource lhs low2
-                            (newHighNode, revMap2, cache2, idSrc2) = appCachedOrBase revMap1 cache1 idSrc1 lhs high2
-                        in (mk revMap2 idSrc2 var2 newLowNode newHighNode, cache2)
-              cache'' = M.insert (uid1, uid2) newNode cache'
-          in (newNode, revMap', cache'', idSrc')
+                  GT -> do
+                    newLowNode <- appCachedOrBase lhs low2
+                    newHighNode <- appCachedOrBase lhs high2
+                    mk var2 newLowNode newHighNode
+          memoNode (uid1, uid2) newNode
+          return newNode
 
+        maybeApply :: BDD -> BDD -> Maybe Bool
         maybeApply lhs rhs = do
           b1 <- toBool lhs
           b2 <- toBool rhs

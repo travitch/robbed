@@ -48,7 +48,7 @@ library
   exposed-modules: Data.ROBDD.Strict
 
   -- Packages needed in order to build this package.
-  build-depends: hamtmap, hashable, base == 4.*
+  build-depends: hamtmap, hashable, base == 4.*, mtl == 2.*
 
   -- Modules not exported by this package.
   -- Other-modules:
