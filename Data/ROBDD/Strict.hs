@@ -16,6 +16,9 @@ module Data.ROBDD.Strict ( BDD(..)
                          , nand
                          , nor
                          , neg
+                         , exist
+                         , forAll
+                         , unique
                          ) where
 
 import Prelude hiding (and, or, negate)
@@ -109,6 +112,16 @@ nand = apply boolNotAnd
 nor :: ROBDD -> ROBDD -> ROBDD
 nor = apply boolNotOr
 
+-- FIXME: These can probably be performed more efficiently;
+-- particularly for sets of variables being quantified over
+exist :: ROBDD -> Var -> ROBDD
+exist bdd var = or (restrict bdd var True) (restrict bdd var False)
+
+unique :: ROBDD -> Var -> ROBDD
+unique bdd var = xor (restrict bdd var True) (restrict bdd var False)
+
+forAll :: ROBDD -> Var -> ROBDD
+forAll bdd var = and (restrict bdd var True) (restrict bdd var False)
 
 -- | Construct a new BDD by applying the provided binary operator
 -- to the two input BDDs
@@ -229,6 +242,8 @@ anySat (ROBDD _ _ bdd) = Just $ sat' bdd []
             Zero -> (v, True) : sat' high acc
             _ -> (v, False) : sat' low acc
 
+
+-- TODO: satCount, allSat
 
 -- | The MK operation.  Re-use an existing BDD node if possible.
 -- Otherwise create a new node with the provided NodeId, updating the
