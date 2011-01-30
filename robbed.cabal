@@ -45,10 +45,10 @@ cabal-version:       >=1.2
 
 library
   -- Modules exported by the library.
-  exposed-modules: Data.ROBDD.Strict
+  exposed-modules: Data.ROBDD.Strict, Data.ROBDD
 
   -- Packages needed in order to build this package.
-  build-depends: hamtmap, hashable, base == 4.*, mtl == 2.*
+  build-depends: hamtmap, hashable, base == 4.*, mtl == 2.*, fgl, graphviz, hashmap
 
   -- Modules not exported by this package.
   -- Other-modules:
