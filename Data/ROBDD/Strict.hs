@@ -1,5 +1,5 @@
 module Data.ROBDD.Strict ( BDD(..)
-                         , mk
+                         , ROBDD(..)
                          , apply
                          , restrict
                          , makeVar
@@ -19,24 +19,14 @@ module Data.ROBDD.Strict ( BDD(..)
 
 import Prelude hiding (and, or, negate)
 import Control.Monad.State
-import Data.HamtMap (HamtMap)
 import qualified Data.HamtMap as M
 import Data.Hashable
 
 import qualified Data.Graph.Inductive as G
 import Data.GraphViz
 
-type Map = HamtMap
-
-type RevMap = Map (Var, NodeId, NodeId) BDD
-
-type NodeId = Int
-type Var = Int
-
--- Node types
-data BDD = BDD BDD Var BDD NodeId
-         | Zero
-         | One
+import Data.ROBDD.Strict.Types
+import Data.ROBDD.BooleanFunctions
 
 makeTrue :: ROBDD
 makeTrue = ROBDD M.empty [] One
@@ -46,55 +36,21 @@ makeVar :: Var -> ROBDD
 makeVar v = ROBDD M.empty [] bdd
   where bdd = BDD Zero v One 2
 
--- Accessible wrapper
-data ROBDD = ROBDD RevMap [Int] BDD
 
-instance Eq BDD where
-  Zero == Zero = True
-  One == One = True
-  (BDD _ _ _ id1) == (BDD _ _ _ id2) = id1 == id2
-  _ == _ = False
-
-instance Labellable BDD where
-  toLabel Zero = toLabel "Zero"
-  toLabel One = toLabel "One"
-  toLabel (BDD _ v _ _) = toLabel $ show v
-
-
--- This is not an Ord instance because the EQ it returns is not the same
--- as the Eq typeclass - it is variable based instead of identity based
-bddCmp :: BDD -> BDD -> Ordering
-Zero `bddCmp` Zero = EQ
-One `bddCmp` One = EQ
-Zero `bddCmp` One = GT
-One `bddCmp` Zero = LT
-(BDD _ _ _ _) `bddCmp` Zero = LT
-(BDD _ _ _ _) `bddCmp` One = LT
-Zero `bddCmp` (BDD _ _ _ _) = GT
-One `bddCmp` (BDD _ _ _ _) = GT
-(BDD _ v1 _ _) `bddCmp` (BDD _ v2 _ _) = v1 `compare` v2
-
-highEdge :: BDD -> BDD
-highEdge (BDD _ _ h _) = h
-highEdge _ = error "No high edge in Zero or One"
-
-lowEdge :: BDD -> BDD
-lowEdge (BDD l _ _ _) = l
-lowEdge _ = error "No low edge in Zero or One"
-
-nodeVar :: BDD -> Var
-nodeVar (BDD _ v _ _) = v
-nodeVar _ = error "No variable for Zero or One"
-
-nodeUID :: BDD -> Int
-nodeUID Zero = 0
-nodeUID One = 1
-nodeUID (BDD _ _ _ uid) = uid
-
+-- Types used internally; these are for a State monad that tracks memo
+-- tables and revmap updates.
 data BDDState a = BDDState { bddRevMap :: RevMap
                            , bddIdSource :: [Int]
                            , bddMemoTable :: Map a BDD
                            }
+
+-- Start IDs at 2, since Zero and One are conceptually taken
+emptyBDDState :: (Eq a, Hashable a) => BDDState a
+emptyBDDState = BDDState { bddRevMap = M.empty
+                         , bddIdSource = [2..]
+                         , bddMemoTable = M.empty
+                         }
+
 type BDDContext a b = State (BDDState a) b
 
 revLookup :: Var -> BDD -> BDD -> RevMap -> (Maybe BDD)
@@ -115,30 +71,6 @@ revInsert v lowTarget highTarget = do
 
   return newNode
 
--- Start IDs at 2, since Zero and One are conceptually taken
-emptyBDDState :: (Eq a, Hashable a) => BDDState a
-emptyBDDState = BDDState { bddRevMap = M.empty
-                         , bddIdSource = [2..]
-                         , bddMemoTable = M.empty
-                         }
-
--- | The MK operation.  Re-use an existing BDD node if possible.
--- Otherwise create a new node with the provided NodeId, updating the
--- tables.
-mk :: Var -> BDD -> BDD -> BDDContext a BDD
-mk v low high = do
-  s <- get
-
-  let revMap = bddRevMap s
-
-  if low == high
-    then return low -- Inputs identical, re-use
-    else case revLookup v low high revMap of
-      -- Return existing node
-      Just node -> return node
-      -- Make a new node
-      Nothing -> revInsert v low high
-
 -- A helper to memoize BDD nodes
 memoNode :: (Eq a, Hashable a) => a -> BDD -> BDDContext a ()
 memoNode key val = do
@@ -157,44 +89,21 @@ getMemoNode key = do
 
 and :: ROBDD -> ROBDD -> ROBDD
 and = apply (&&)
+
 or :: ROBDD -> ROBDD -> ROBDD
 or = apply (||)
-
-boolXor :: Bool -> Bool -> Bool
-True `boolXor` True = False
-False `boolXor` False = False
-_ `boolXor` _ = True
 
 xor :: ROBDD -> ROBDD -> ROBDD
 xor = apply boolXor
 
-boolImpl :: Bool -> Bool -> Bool
-True `boolImpl` True = True
-True `boolImpl` False = False
-False `boolImpl` True = True
-False `boolImpl` False = True
-
 impl :: ROBDD -> ROBDD -> ROBDD
 impl = apply boolImpl
-
-boolBiimp :: Bool -> Bool -> Bool
-True `boolBiimp` True = True
-False `boolBiimp` False = True
-_ `boolBiimp` _ = False
 
 biimpl :: ROBDD -> ROBDD -> ROBDD
 biimpl = apply boolBiimp
 
-boolNotAnd :: Bool -> Bool -> Bool
-True `boolNotAnd` True = False
-_ `boolNotAnd` _ = True
-
 nand :: ROBDD -> ROBDD -> ROBDD
 nand = apply boolNotAnd
-
-boolNotOr :: Bool -> Bool -> Bool
-False `boolNotOr` False = True
-_ `boolNotOr` _ = False
 
 nor :: ROBDD -> ROBDD -> ROBDD
 nor = apply boolNotOr
@@ -311,12 +220,28 @@ anySat :: ROBDD -> Maybe ([(Var, Bool)])
 anySat (ROBDD _ _ Zero) = Nothing
 anySat (ROBDD _ _ One) = Just []
 
-type DAG = G.Gr BDD Bool
 
-bddVarNum :: BDD -> Var
-bddVarNum Zero = 0
-bddVarNum One = 1
-bddVarNum (BDD _ v _ _) = v
+-- | The MK operation.  Re-use an existing BDD node if possible.
+-- Otherwise create a new node with the provided NodeId, updating the
+-- tables.  This is not exported and just used internally.
+mk :: Var -> BDD -> BDD -> BDDContext a BDD
+mk v low high = do
+  s <- get
+
+  let revMap = bddRevMap s
+
+  if low == high
+    then return low -- Inputs identical, re-use
+    else case revLookup v low high revMap of
+      -- Return existing node
+      Just node -> return node
+      -- Make a new node
+      Nothing -> revInsert v low high
+
+
+-- Testing stuff
+
+type DAG = G.Gr BDD Bool
 
 makeDAG :: ROBDD -> DAG
 makeDAG (ROBDD _ _ bdd) = G.mkGraph nodeList (map unTuple $ M.toList edges)
@@ -342,6 +267,13 @@ makeDAG (ROBDD _ _ bdd) = G.mkGraph nodeList (map unTuple $ M.toList edges)
         collectEdges _ s = s
         unTuple ((a, b), c) = (a, b, c)
 
+
+        bddVarNum :: BDD -> Var
+        bddVarNum Zero = 0
+        bddVarNum One = 1
+        bddVarNum (BDD _ v _ _) = v
+
+
 viewDAG dag = do
   let dg = graphToDot nonClusteredParams dag
   s <- prettyPrint dg
@@ -356,7 +288,7 @@ main = do
       f2 = or f1 x4
       f3 = or f2 makeTrue -- tautology
       f4 = restrict f2 3 False
-      f5 = negate f2
+      f5 = neg f2
       dag = makeDAG f5
 
   viewDAG dag
