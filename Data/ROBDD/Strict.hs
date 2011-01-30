@@ -2,6 +2,7 @@ module Data.ROBDD.Strict ( BDD(..)
                          , ROBDD(..)
                          , apply
                          , restrict
+                         , anySat
                          , makeVar
                          , makeTrue
                          , makeFalse
@@ -205,7 +206,7 @@ neg (ROBDD _ _ bdd) =
   in ROBDD (bddRevMap s) (bddIdSource s) r
   where negate' Zero = return One
         negate' One = return Zero
-        negate' o@(BDD low var high uid) = do
+        negate' (BDD low var high uid) = do
           mem <- getMemoNode uid
           case mem of
             Just node -> return node
