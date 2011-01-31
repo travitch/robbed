@@ -1,6 +1,7 @@
 module Data.ROBDD.Strict ( BDD(..)
                          , ROBDD(..)
                          , apply
+                         , applyExists
                          , restrict
                          , restrictAll
                          , anySat
@@ -26,6 +27,7 @@ import Prelude hiding (and, or, negate)
 import Control.Monad.State
 import qualified Data.HamtMap as M
 import Data.Hashable
+import qualified Data.HashSet as S
 
 import qualified Data.Graph.Inductive as G
 import Data.GraphViz
@@ -141,48 +143,91 @@ forAll bdd var = and (restrict bdd var True) (restrict bdd var False)
 -- we need to build a new one on the fly for the result BDD.
 apply :: (Bool -> Bool -> Bool) -> ROBDD -> ROBDD -> ROBDD
 apply op (ROBDD _ _ bdd1) (ROBDD _ _ bdd2) =
-  let (bdd, s) = runState (appCachedOrBase bdd1 bdd2) emptyBDDState
+  let (bdd, s) = runState (applyInner op bdd1 bdd2) emptyBDDState
       -- FIXME: Remove unused bindings in the revmap to allow the
       -- runtime to GC unused nodes
   in ROBDD (bddRevMap s) (bddIdSource s) bdd
-  where appCachedOrBase :: BDD -> BDD -> BDDContext (NodeId, NodeId) BDD
-        appCachedOrBase lhs rhs = memoize (nodeUID lhs, nodeUID rhs) $ do
-          case maybeApply lhs rhs of
+
+applyInner :: (Bool -> Bool -> Bool) -> BDD -> BDD -> BDDContext (NodeId, NodeId) BDD
+applyInner op bdd1 bdd2 = appBase bdd1 bdd2
+  where appBase :: BDD -> BDD -> BDDContext (NodeId, NodeId) BDD
+        appBase lhs rhs = memoize (nodeUID lhs, nodeUID rhs) $ do
+          case maybeApply op lhs rhs of
             Just True -> return One
             Just False -> return Zero
             Nothing -> appRec lhs rhs
 
         appRec :: BDD -> BDD -> BDDContext (NodeId, NodeId) BDD
         appRec lhs rhs = do
-          newNode <- case lhs `bddCmp` rhs of
-                  -- Vars are the same
-                  EQ -> do
-                    newLowNode <- appCachedOrBase (lowEdge lhs) (lowEdge rhs)
-                    newHighNode <- appCachedOrBase (highEdge lhs) (highEdge rhs)
-                    mk (nodeVar lhs) newLowNode newHighNode
-                  -- Var1 is less than var2
-                  LT -> do
-                    newLowNode <- appCachedOrBase (lowEdge lhs) rhs
-                    newHighNode <- appCachedOrBase (highEdge lhs) rhs
-                    mk (nodeVar lhs) newLowNode newHighNode
-                  -- Var1 is greater than v2
-                  GT -> do
-                    newLowNode <- appCachedOrBase lhs (lowEdge rhs)
-                    newHighNode <- appCachedOrBase lhs (highEdge rhs)
-                    mk (nodeVar rhs) newLowNode newHighNode
+          (v, l', h') <- applyRecCore appBase lhs rhs
+          newNode <- mk v l' h'
           memoNode (nodeUID lhs, nodeUID rhs) newNode
           return newNode
 
-        maybeApply :: BDD -> BDD -> Maybe Bool
-        maybeApply lhs rhs = do
-          b1 <- toBool lhs
-          b2 <- toBool rhs
-          return $ b1 `op` b2
+maybeApply :: (Bool -> Bool -> Bool) -> BDD -> BDD -> Maybe Bool
+maybeApply op lhs rhs = do
+  b1 <- toBool lhs
+  b2 <- toBool rhs
+  return $ b1 `op` b2
 
-        toBool :: BDD -> Maybe Bool
-        toBool One = Just True
-        toBool Zero = Just False
-        toBool _ = Nothing
+toBool :: BDD -> Maybe Bool
+toBool One = Just True
+toBool Zero = Just False
+toBool _ = Nothing
+
+applyRecCore :: (Monad m) => (BDD -> BDD -> m BDD) -> BDD -> BDD -> m (Var, BDD, BDD)
+applyRecCore appBase lhs rhs = case lhs `bddCmp` rhs of
+  -- Vars are the same
+  EQ -> do
+    newLowNode <- appBase (lowEdge lhs) (lowEdge rhs)
+    newHighNode <- appBase (highEdge lhs) (highEdge rhs)
+    return (nodeVar lhs, newLowNode, newHighNode)
+  -- Var1 is less than var2
+  LT -> do
+    newLowNode <- appBase (lowEdge lhs) rhs
+    newHighNode <- appBase (highEdge lhs) rhs
+    return (nodeVar lhs, newLowNode, newHighNode)
+
+    -- Var1 is greater than v2
+  GT -> do
+    newLowNode <- appBase lhs (lowEdge rhs)
+    newHighNode <- appBase lhs (highEdge rhs)
+    return (nodeVar rhs, newLowNode, newHighNode)
+
+
+-- | A variant of apply that existentially quantifies out the provided
+-- list of variables on the fly during the bottom-up construction of
+-- the result.  This is much more efficient than performing the
+-- quantification after the apply.
+applyExists :: (Bool -> Bool -> Bool) -> ROBDD -> ROBDD -> [Var] -> ROBDD
+applyExists op (ROBDD _ _ bdd1) (ROBDD _ _ bdd2) evars =
+  let (bdd, s) = runState (appBase bdd1 bdd2) emptyBDDState
+  in ROBDD (bddRevMap s) (bddIdSource s) bdd
+  where varSet = S.fromList evars
+        appBase :: BDD -> BDD -> BDDContext (NodeId, NodeId) BDD
+        appBase lhs rhs = memoize (nodeUID lhs, nodeUID rhs) $ do
+          case maybeApply op lhs rhs of
+            Just True -> return One
+            Just False -> return Zero
+            Nothing -> appRec lhs rhs
+        appRec :: BDD -> BDD -> BDDContext (NodeId, NodeId) BDD
+        appRec lhs rhs = do
+          let topVar = max (nodeVar lhs) (nodeVar rhs)
+          (v', l', h') <- applyRecCore appBase lhs rhs
+          newNode <- case topVar `S.member` varSet of
+            -- Standard case - we are not projecting out this variable
+            -- so just let mk handle creating a new node if necessary
+            False -> mk v' l' h'
+            -- If this variable is to be quantified out, this magic is
+            -- due to McMillan 92; we quantify it out while we are
+            -- building the tree via a call to or.  This re-uses the
+            -- current BDD context and so does not use the top-level
+            -- or, but the underlying machinery
+            True -> applyInner (||) l' h'
+          memoNode (nodeUID lhs, nodeUID rhs) newNode
+          return newNode
+
+
 
 restrict :: ROBDD -> Var -> Bool -> ROBDD
 restrict bdd@(ROBDD _ _ Zero) _ _ = bdd
