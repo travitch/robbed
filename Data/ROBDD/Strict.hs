@@ -2,6 +2,7 @@ module Data.ROBDD.Strict ( BDD(..)
                          , ROBDD(..)
                          , apply
                          , restrict
+                         , restrictAll
                          , anySat
                          , makeVar
                          , makeTrue
@@ -93,6 +94,14 @@ getMemoNode key = do
 
   return $ M.lookup key memoTable
 
+memoize :: (Eq a, Hashable a) => a -> State (BDDState a) BDD -> State (BDDState a) BDD
+memoize uid act = do
+  mem <- getMemoNode uid
+  case mem of
+    Just node -> return node
+    Nothing -> act
+
+
 and :: ROBDD -> ROBDD -> ROBDD
 and = apply (&&)
 
@@ -137,15 +146,11 @@ apply op (ROBDD _ _ bdd1) (ROBDD _ _ bdd2) =
       -- runtime to GC unused nodes
   in ROBDD (bddRevMap s) (bddIdSource s) bdd
   where appCachedOrBase :: BDD -> BDD -> BDDContext (NodeId, NodeId) BDD
-        appCachedOrBase lhs rhs = do
-          memNode <- getMemoNode (nodeUID lhs, nodeUID rhs)
-
-          case memNode of
-            Just cachedVal -> return cachedVal
-            Nothing -> case maybeApply lhs rhs of
-              Just True -> return One
-              Just False -> return Zero
-              Nothing -> appRec lhs rhs
+        appCachedOrBase lhs rhs = memoize (nodeUID lhs, nodeUID rhs) $ do
+          case maybeApply lhs rhs of
+            Just True -> return One
+            Just False -> return Zero
+            Nothing -> appRec lhs rhs
 
         appRec :: BDD -> BDD -> BDDContext (NodeId, NodeId) BDD
         appRec lhs rhs = do
@@ -189,21 +194,18 @@ restrict (ROBDD revMap idSrc bdd) v b =
   in ROBDD (bddRevMap s) (bddIdSource s) r
   where restrict' Zero = return Zero
         restrict' One = return One
-        restrict' o@(BDD low var high uid) = do
-          mem <- getMemoNode uid
-          case mem of
-            Just node -> return node
-            Nothing -> case var `compare` v of
-              GT -> return o
-              LT -> do
-                low' <- restrict' low
-                high' <- restrict' high
-                n <- mk var low' high'
-                memoNode uid n
-                return n
-              EQ -> case b of
-                True -> restrict' high
-                False -> restrict' low
+        restrict' o@(BDD low var high uid) = memoize uid $ do
+          case var `compare` v of
+            GT -> return o
+            LT -> do
+              low' <- restrict' low
+              high' <- restrict' high
+              n <- mk var low' high'
+              memoNode uid n
+              return n
+            EQ -> case b of
+              True -> restrict' high
+              False -> restrict' low
 
 -- | restrict over a list of variable/value pairs.  This should be
 -- more efficient than repeated calls to restrict.
@@ -218,22 +220,19 @@ restrictAll (ROBDD revMap idSrc bdd) vals =
   where valMap = M.fromList vals
         restrict' Zero = return Zero
         restrict' One = return One
-        restrict' (BDD low var high uid) = do
-          mem <- getMemoNode uid
-          case mem of
-            Just node -> return node
-            Nothing -> case var `M.lookup` valMap of
-              Just b -> case b of
-                True -> restrict' high
-                False -> restrict' low
-              Nothing -> do
-                low' <- restrict' low
-                high' <- restrict' high
-                n <- mk var low' high'
-                memoNode uid n
-                return n
+        restrict' (BDD low var high uid) = memoize uid $ do
+          case var `M.lookup` valMap of
+            Just b -> case b of
+              True -> restrict' high
+              False -> restrict' low
+            Nothing -> do
+              low' <- restrict' low
+              high' <- restrict' high
+              n <- mk var low' high'
+              memoNode uid n
+              return n
 
--- | Negate the given BDD.  This implementation is somewhat more
+-- | negate the given BDD.  This implementation is somewhat more
 -- efficient than the naiive translation to BDD -> False.
 -- Unfortunately, it isn't as much of an improvement as it could be
 -- via destructive updates. FIXME: Implement constant-time negation
@@ -246,16 +245,12 @@ neg (ROBDD _ _ bdd) =
   in ROBDD (bddRevMap s) (bddIdSource s) r
   where negate' Zero = return One
         negate' One = return Zero
-        negate' (BDD low var high uid) = do
-          mem <- getMemoNode uid
-          case mem of
-            Just node -> return node
-            Nothing -> do
-              low' <- negate' low
-              high' <- negate' high
-              n <- mk var low' high'
-              memoNode uid n
-              return n
+        negate' (BDD low var high uid) = memoize uid $ do
+          low' <- negate' low
+          high' <- negate' high
+          n <- mk var low' high'
+          memoNode uid n
+          return n
 
 anySat :: ROBDD -> Maybe ([(Var, Bool)])
 anySat (ROBDD _ _ Zero) = Nothing
