@@ -37,7 +37,9 @@ makeTrue = ROBDD M.empty [] One
 makeFalse :: ROBDD
 makeFalse = ROBDD M.empty [] Zero
 makeVar :: Var -> ROBDD
-makeVar v = ROBDD M.empty [] bdd
+makeVar v
+  | v >= 0 = ROBDD M.empty [] bdd
+  | otherwise = error "Variable numbers must be >= 0"
   where bdd = BDD Zero v One 0
 
 
