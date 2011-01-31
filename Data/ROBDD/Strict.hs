@@ -210,7 +210,8 @@ restrict (ROBDD revMap idSrc bdd) v b =
 -- | Negate the given BDD.  This implementation is somewhat more
 -- efficient than the naiive translation to BDD -> False.
 -- Unfortunately, it isn't as much of an improvement as it could be
--- via destructive updates.
+-- via destructive updates. FIXME: Implement constant-time negation
+-- either via negation arcs or just a flag on the ROBDD structure
 neg :: ROBDD -> ROBDD
 neg (ROBDD _ _ bdd) =
   -- Everything gets re-allocated so don't bother trying to re-use the
