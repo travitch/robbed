@@ -68,6 +68,6 @@ nodeVar (BDD _ v _ _) = v
 nodeVar _ = error "No variable for Zero or One"
 
 nodeUID :: BDD -> Int
-nodeUID Zero = 0
-nodeUID One = 1
+nodeUID Zero = (-1)
+nodeUID One = (-2)
 nodeUID (BDD _ _ _ uid) = uid

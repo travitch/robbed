@@ -38,7 +38,7 @@ makeFalse :: ROBDD
 makeFalse = ROBDD M.empty [] Zero
 makeVar :: Var -> ROBDD
 makeVar v = ROBDD M.empty [] bdd
-  where bdd = BDD Zero v One 2
+  where bdd = BDD Zero v One 0
 
 
 -- Types used internally; these are for a State monad that tracks memo
@@ -51,7 +51,7 @@ data BDDState a = BDDState { bddRevMap :: RevMap
 -- Start IDs at 2, since Zero and One are conceptually taken
 emptyBDDState :: (Eq a, Hashable a) => BDDState a
 emptyBDDState = BDDState { bddRevMap = M.empty
-                         , bddIdSource = [2..]
+                         , bddIdSource = [0..]
                          , bddMemoTable = M.empty
                          }
 
@@ -279,8 +279,8 @@ makeDAG (ROBDD _ _ bdd) = G.mkGraph nodeList (map unTuple $ M.toList edges)
           let s' = collectNodes low s
               s'' = collectNodes high s'
           in M.insert v b s''
-        collectNodes Zero s = M.insert 0 Zero s
-        collectNodes One s = M.insert 1 One s
+        collectNodes Zero s = M.insert (-1) Zero s
+        collectNodes One s = M.insert (-2) One s
         edges :: Map (Var, Var) Bool
         edges = collectEdges bdd M.empty
         collectEdges :: BDD -> Map (Var, Var) Bool -> Map (Var, Var) Bool
@@ -294,8 +294,8 @@ makeDAG (ROBDD _ _ bdd) = G.mkGraph nodeList (map unTuple $ M.toList edges)
 
 
         bddVarNum :: BDD -> Var
-        bddVarNum Zero = 0
-        bddVarNum One = 1
+        bddVarNum Zero = -1
+        bddVarNum One = -2
         bddVarNum (BDD _ v _ _) = v
 
 
@@ -306,13 +306,13 @@ viewDAG dag = do
   preview dag
 
 main = do
-  let x2 = makeVar 2
-      x3 = makeVar 3
-      x4 = makeVar 4
-      f1 = and x2 x3
-      f2 = or f1 x4
+  let x0 = makeVar 0
+      x1 = makeVar 1
+      x2 = makeVar 2
+      f1 = and x0 x1
+      f2 = or f1 x2
       f3 = or f2 makeTrue -- tautology
-      f4 = restrict f2 3 False
+      f4 = restrict f2 1 False
       f5 = neg f2
       dag = makeDAG f5
 
