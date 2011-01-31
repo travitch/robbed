@@ -205,9 +205,33 @@ restrict (ROBDD revMap idSrc bdd) v b =
                 True -> restrict' high
                 False -> restrict' low
 
--- TODO: Implement restrictAll :: ROBDD -> [(Var, Bool)] -> ROBDD
--- A fold would work, but it could be much more efficient to handle
--- them all at once
+-- | restrict over a list of variable/value pairs.  This should be
+-- more efficient than repeated calls to restrict.
+restrictAll :: ROBDD -> [(Var, Bool)] -> ROBDD
+restrictAll bdd@(ROBDD _ _ Zero) _ = bdd
+restrictAll bdd@(ROBDD _ _ One) _ = bdd
+restrictAll (ROBDD revMap idSrc bdd) vals =
+  let (r, s) = runState (restrict' bdd) emptyBDDState { bddIdSource = idSrc
+                                                      , bddRevMap = revMap
+                                                      }
+  in ROBDD (bddRevMap s) (bddIdSource s) r
+  where valMap = M.fromList vals
+        restrict' Zero = return Zero
+        restrict' One = return One
+        restrict' (BDD low var high uid) = do
+          mem <- getMemoNode uid
+          case mem of
+            Just node -> return node
+            Nothing -> case var `M.lookup` valMap of
+              Just b -> case b of
+                True -> restrict' high
+                False -> restrict' low
+              Nothing -> do
+                low' <- restrict' low
+                high' <- restrict' high
+                n <- mk var low' high'
+                memoNode uid n
+                return n
 
 -- | Negate the given BDD.  This implementation is somewhat more
 -- efficient than the naiive translation to BDD -> False.
