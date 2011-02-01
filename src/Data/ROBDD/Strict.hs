@@ -10,8 +10,6 @@ module Data.ROBDD.Strict ( BDD(..)
                          , makeVar
                          , makeTrue
                          , makeFalse
-                         , viewDAG
-                         , makeDAG
                          , and
                          , or
                          , xor
@@ -25,14 +23,11 @@ module Data.ROBDD.Strict ( BDD(..)
                          , unique
                          ) where
 
-import Prelude hiding (and, or, negate)
+import Prelude hiding (and, or)
 import Control.Monad.State
 import qualified Data.HamtMap as M
 import Data.Hashable
 import qualified Data.HashSet as S
-
-import qualified Data.Graph.Inductive as G
-import Data.GraphViz
 
 import Data.ROBDD.Strict.Types
 import Data.ROBDD.BooleanFunctions
@@ -127,11 +122,11 @@ nand = apply boolNotAnd
 nor :: ROBDD -> ROBDD -> ROBDD
 nor = apply boolNotOr
 
--- FIXME: These can probably be performed more efficiently;
--- particularly for sets of variables being quantified over
+-- | Existentially quantify a single variable from a BDD
 exist :: ROBDD -> Var -> ROBDD
 exist bdd var = or (restrict bdd var True) (restrict bdd var False)
 
+-- |
 unique :: ROBDD -> Var -> ROBDD
 unique bdd var = xor (restrict bdd var True) (restrict bdd var False)
 
@@ -357,71 +352,33 @@ mk v low high = do
 
 -- Testing stuff
 
-type DAG = G.Gr BDD Bool
 
-makeDAG :: ROBDD -> DAG
-makeDAG (ROBDD _ _ bdd) = G.mkGraph nodeList (map unTuple $ M.toList edges)
-  where nodes :: Map Var BDD
-        nodes = collectNodes bdd M.empty
-        nodeList :: [ (Var, BDD) ]
-        nodeList = M.toList nodes
-        collectNodes :: BDD -> Map Var BDD -> Map Var BDD
-        collectNodes b@(BDD low v high _) s =
-          let s' = collectNodes low s
-              s'' = collectNodes high s'
-          in M.insert v b s''
-        collectNodes Zero s = M.insert (-1) Zero s
-        collectNodes One s = M.insert (-2) One s
-        edges :: Map (Var, Var) Bool
-        edges = collectEdges bdd M.empty
-        collectEdges :: BDD -> Map (Var, Var) Bool -> Map (Var, Var) Bool
-        collectEdges (BDD low v high _) s =
-          let s' = collectEdges low s
-              s'' = collectEdges high s'
-              s''' = M.insert (v, bddVarNum low) False s''
-          in M.insert (v, bddVarNum high) True s'''
-        collectEdges _ s = s
-        unTuple ((a, b), c) = (a, b, c)
+-- main = do
+--   let x0 = makeVar 0
+--       x1 = makeVar 1
+--       x2 = makeVar 2
+--       f1 = and x0 x1
+--       f2 = or f1 x2
+--       f3 = or f2 makeTrue -- tautology
+--       f4 = restrict f2 1 False
+--       f5 = neg f2
+--       dag = makeDAG f5
 
+--   viewDAG dag
 
-        bddVarNum :: BDD -> Var
-        bddVarNum Zero = -1
-        bddVarNum One = -2
-        bddVarNum (BDD _ v _ _) = v
+-- testQuant = do
+--   let [x0, x1, x2, x3] = map makeVar [0, 1, 2, 3]
+--       f1 = and x0 x1
+--       f2 = and x1 x2
+--       f3 = x3
+--       f4 = and f2 f3
+--       f5 = and f1 f4
+--       q1 = exist f5 2
+--       q2 = applyExists (&&) f1 f4 [2]
+--       dag0 = makeDAG f5
+--       dag1 = makeDAG q1
+--       dag2 = makeDAG q2
 
-
-viewDAG dag = do
-  let dg = graphToDot nonClusteredParams dag
-  s <- prettyPrint dg
-  putStrLn s
-  preview dag
-
-main = do
-  let x0 = makeVar 0
-      x1 = makeVar 1
-      x2 = makeVar 2
-      f1 = and x0 x1
-      f2 = or f1 x2
-      f3 = or f2 makeTrue -- tautology
-      f4 = restrict f2 1 False
-      f5 = neg f2
-      dag = makeDAG f5
-
-  viewDAG dag
-
-testQuant = do
-  let [x0, x1, x2, x3] = map makeVar [0, 1, 2, 3]
-      f1 = and x0 x1
-      f2 = and x1 x2
-      f3 = x3
-      f4 = and f2 f3
-      f5 = and f1 f4
-      q1 = exist f5 2
-      q2 = applyExists (&&) f1 f4 [2]
-      dag0 = makeDAG f5
-      dag1 = makeDAG q1
-      dag2 = makeDAG q2
-
-  viewDAG dag0
-  viewDAG dag1
-  viewDAG dag2
+--   viewDAG dag0
+--   viewDAG dag1
+--   viewDAG dag2
