@@ -55,6 +55,5 @@ memoize uid act = do
     Just node -> return node
     Nothing -> act
 
--- runBDDContext :: (Eq a, Ord a, Hashable a) => BDDContext a b -> BDDState a -> (b, a)
 runBDDContext :: State s a -> s -> (a, s)
 runBDDContext = runState

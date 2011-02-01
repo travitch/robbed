@@ -26,7 +26,6 @@ data BDD = BDD BDD Var BDD NodeId
          | Zero
          | One
 
-
 -- Accessible wrapper
 data ROBDD = ROBDD RevMap [Int] BDD
 
