@@ -16,7 +16,7 @@ main = do
   g <- getStdGen
   let rs = randoms g
       (rs1, rs2) = splitAt 100 rs
-      logicVars = take 70 $ map makeVar [0..]
+      logicVars = take 100 $ map makeVar [0..]
       f1 = makeFormula rs1 logicVars
       f2 = makeFormula rs2 logicVars
       f3 = and f1 f2

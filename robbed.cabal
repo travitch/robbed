@@ -55,7 +55,9 @@ library
   build-depends: hamtmap, hashable, base == 4.*, mtl == 2.*, fgl, graphviz, hashmap
 
   -- Modules not exported by this package.
-  Other-modules: Data.ROBDD.Strict.Types, Data.ROBDD.BooleanFunctions
+  Other-modules: Data.ROBDD.BooleanFunctions,
+                 Data.ROBDD.Strict.Memoization,
+                 Data.ROBDD.Strict.Types
 
   -- Extra tools (e.g. alex, hsc2hs, ...) needed to build the source.
   -- Build-tools:

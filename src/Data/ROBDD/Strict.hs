@@ -1,5 +1,4 @@
-module Data.ROBDD.Strict ( BDD(..)
-                         , ROBDD(..)
+module Data.ROBDD.Strict ( ROBDD(..)
                          , apply
                          , applyExists
                          , applyForAll
@@ -24,81 +23,32 @@ module Data.ROBDD.Strict ( BDD(..)
                          ) where
 
 import Prelude hiding (and, or)
-import Control.Monad.State
 import qualified Data.HamtMap as M
-import Data.Hashable
 import qualified Data.HashSet as S
 
-import Data.ROBDD.Strict.Types
 import Data.ROBDD.BooleanFunctions
+import Data.ROBDD.Strict.Memoization
+import Data.ROBDD.Strict.Types
 
+type BinBoolFunc = Bool -> Bool -> Bool
+
+-- | Make the BDD representing True (One)
 makeTrue :: ROBDD
 makeTrue = ROBDD M.empty [] One
+
+-- | Make the BDD representing False (Zero)
 makeFalse :: ROBDD
 makeFalse = ROBDD M.empty [] Zero
+
+-- | Make a single BDD variable with the given number.  The number is
+-- used to identify the variable in other functions (like
+-- quantification).  The number must be non-negative; negative numbers
+-- will cause an error to be raised.
 makeVar :: Var -> ROBDD
 makeVar v
   | v >= 0 = ROBDD M.empty [] bdd
   | otherwise = error "Variable numbers must be >= 0"
   where bdd = BDD Zero v One 0
-
-
--- Types used internally; these are for a State monad that tracks memo
--- tables and revmap updates.
-data BDDState a = BDDState { bddRevMap :: RevMap
-                           , bddIdSource :: [Int]
-                           , bddMemoTable :: Map a BDD
-                           }
-
--- Start IDs at 2, since Zero and One are conceptually taken
-emptyBDDState :: (Eq a, Hashable a) => BDDState a
-emptyBDDState = BDDState { bddRevMap = M.empty
-                         , bddIdSource = [0..]
-                         , bddMemoTable = M.empty
-                         }
-
-type BDDContext a b = State (BDDState a) b
-
-revLookup :: Var -> BDD -> BDD -> RevMap -> (Maybe BDD)
-revLookup v leftTarget rightTarget revMap = do
-  M.lookup (v, nodeUID leftTarget, nodeUID rightTarget) revMap
-
--- Create a new node for v with the given high and low edges.
--- Insert it into the revMap and return it.
-revInsert :: Var -> BDD -> BDD -> BDDContext a BDD
-revInsert v lowTarget highTarget = do
-  s <- get
-  let revMap = bddRevMap s
-      (nodeId:rest) = bddIdSource s
-      revMap' = M.insert (v, nodeUID lowTarget, nodeUID highTarget) newNode revMap
-      newNode = BDD lowTarget v highTarget nodeId
-  put $ s { bddRevMap = revMap'
-          , bddIdSource = rest }
-
-  return newNode
-
--- A helper to memoize BDD nodes
-memoNode :: (Eq a, Hashable a) => a -> BDD -> BDDContext a ()
-memoNode key val = do
-  s <- get
-  let memoTable = bddMemoTable s
-      memoTable' = M.insert key val memoTable
-
-  put s { bddMemoTable = memoTable' }
-
-getMemoNode :: (Eq a, Hashable a) => a -> BDDContext a (Maybe BDD)
-getMemoNode key = do
-  s <- get
-  let memoTable = bddMemoTable s
-
-  return $ M.lookup key memoTable
-
-memoize :: (Eq a, Hashable a) => a -> State (BDDState a) BDD -> State (BDDState a) BDD
-memoize uid act = do
-  mem <- getMemoNode uid
-  case mem of
-    Just node -> return node
-    Nothing -> act
 
 
 and :: ROBDD -> ROBDD -> ROBDD
@@ -126,10 +76,11 @@ nor = apply boolNotOr
 exist :: ROBDD -> Var -> ROBDD
 exist bdd var = or (restrict bdd var True) (restrict bdd var False)
 
--- |
+-- | Uniquely quantify a single variable from a BDD.
 unique :: ROBDD -> Var -> ROBDD
 unique bdd var = xor (restrict bdd var True) (restrict bdd var False)
 
+-- | forAll quantify the given variable
 forAll :: ROBDD -> Var -> ROBDD
 forAll bdd var = and (restrict bdd var True) (restrict bdd var False)
 
@@ -140,12 +91,11 @@ forAll bdd var = and (restrict bdd var True) (restrict bdd var False)
 -- we need to build a new one on the fly for the result BDD.
 apply :: (Bool -> Bool -> Bool) -> ROBDD -> ROBDD -> ROBDD
 apply op (ROBDD _ _ bdd1) (ROBDD _ _ bdd2) =
-  let (bdd, s) = runState (applyInner op stdCtxt bdd1 bdd2) emptyBDDState
+  let (bdd, s) = runBDDContext (applyInner op stdCtxt bdd1 bdd2) emptyBDDState
       -- FIXME: Remove unused bindings in the revmap to allow the
       -- runtime to GC unused nodes
   in ROBDD (bddRevMap s) (bddIdSource s) bdd
 
-type BinBoolFunc = Bool -> Bool -> Bool
 
 -- This is the main implementation of apply, but also re-used for the
 -- combined apply/quantify operations.
@@ -160,7 +110,7 @@ applyInner op ctxt bdd1 bdd2 = appBase bdd1 bdd2
 
         appRec :: BDD -> BDD -> BDDContext (EvaluationContext, NodeId, NodeId) BDD
         appRec lhs rhs = do
-          (v, l', h') <- applyRecCore appBase lhs rhs
+          (v, l', h') <- genApplySubproblems appBase lhs rhs
           newNode <- mk v l' h'
           memoNode (ctxt, nodeUID lhs, nodeUID rhs) newNode
           return newNode
@@ -176,8 +126,12 @@ toBool One = Just True
 toBool Zero = Just False
 toBool _ = Nothing
 
-applyRecCore :: (Monad m) => (BDD -> BDD -> m BDD) -> BDD -> BDD -> m (Var, BDD, BDD)
-applyRecCore appBase lhs rhs = case lhs `bddCmp` rhs of
+-- This is the core of apply that determines the subproblems to evaluate
+-- at this step.  The appBase argument is the action that should be
+-- called recursively for each sub problem.
+genApplySubproblems :: (Monad m) => (BDD -> BDD -> m BDD) -> BDD -> BDD ->
+                       m (Var, BDD, BDD)
+genApplySubproblems appBase lhs rhs = case lhs `bddCmp` rhs of
   -- Vars are the same, so use high and low of both lhs and rhs as the
   -- sub-problem
   EQ -> do
@@ -185,7 +139,7 @@ applyRecCore appBase lhs rhs = case lhs `bddCmp` rhs of
     newHighNode <- appBase (highEdge lhs) (highEdge rhs)
     return (nodeVar lhs, newLowNode, newHighNode)
   -- Var1 is less than var2, so only take the low/high edges of the
-  -- lhs
+  -- lhs (pass the RHS through unchanged)
   LT -> do
     newLowNode <- appBase (lowEdge lhs) rhs
     newHighNode <- appBase (highEdge lhs) rhs
@@ -197,13 +151,6 @@ applyRecCore appBase lhs rhs = case lhs `bddCmp` rhs of
     newHighNode <- appBase lhs (highEdge rhs)
     return (nodeVar rhs, newLowNode, newHighNode)
 
-type EvaluationContext = Int
-
-stdCtxt :: EvaluationContext
-stdCtxt = 1
-
-innerCtxt :: EvaluationContext
-innerCtxt = 2
 
 -- This is the main implementation of the combined apply/quantify
 -- operators.  They are really all the same except for the
@@ -211,7 +158,7 @@ innerCtxt = 2
 genericApply :: BinBoolFunc -> BinBoolFunc ->
                 ROBDD -> ROBDD -> [Var] -> ROBDD
 genericApply quantifier op (ROBDD _ _ bdd1) (ROBDD _ _ bdd2) evars =
-  let (bdd, s) = runState (appBase bdd1 bdd2) emptyBDDState
+  let (bdd, s) = runBDDContext (appBase bdd1 bdd2) emptyBDDState
   in ROBDD (bddRevMap s) (bddIdSource s) bdd
   where varSet = S.fromList evars
         appBase :: BDD -> BDD -> BDDContext (EvaluationContext, NodeId, NodeId) BDD
@@ -222,7 +169,7 @@ genericApply quantifier op (ROBDD _ _ bdd1) (ROBDD _ _ bdd2) evars =
             Nothing -> appRec lhs rhs
         appRec :: BDD -> BDD -> BDDContext (EvaluationContext, NodeId, NodeId) BDD
         appRec lhs rhs = do
-          (v', l', h') <- applyRecCore appBase lhs rhs
+          (v', l', h') <- genApplySubproblems appBase lhs rhs
           newNode <- case v' `S.member` varSet of
             -- Standard case - we are not projecting out this variable
             -- so just let mk handle creating a new node if necessary
@@ -233,6 +180,12 @@ genericApply quantifier op (ROBDD _ _ bdd1) (ROBDD _ _ bdd2) evars =
             -- current BDD context and so does not use the top-level
             -- or, but the underlying machinery
             -- See http://www.kenmcmil.com/pubs/thesis.pdf
+            --
+            -- The quantification returns the formula that would
+            -- result if a variable V is declared to be forall,
+            -- unique, or exists; it does this by invoking either and,
+            -- xor, or or on the sub-problems for any step where V is
+            -- the leading variable.
             True -> applyInner quantifier innerCtxt l' h'
           memoNode (stdCtxt, nodeUID lhs, nodeUID rhs) newNode
           return newNode
@@ -249,14 +202,14 @@ applyUnique = genericApply boolXor
 applyForAll :: (Bool -> Bool -> Bool) -> ROBDD -> ROBDD -> [Var] -> ROBDD
 applyForAll = genericApply (&&)
 
-
+-- | Fix the value of a variable in the formula
 restrict :: ROBDD -> Var -> Bool -> ROBDD
 restrict bdd@(ROBDD _ _ Zero) _ _ = bdd
 restrict bdd@(ROBDD _ _ One) _ _ = bdd
 restrict (ROBDD revMap idSrc bdd) v b =
-  let (r,s) = runState (restrict' bdd) emptyBDDState { bddIdSource = idSrc
-                                                     , bddRevMap = revMap
-                                                     }
+  let (r,s) = runBDDContext (restrict' bdd) emptyBDDState { bddIdSource = idSrc
+                                                          , bddRevMap = revMap
+                                                          }
   in ROBDD (bddRevMap s) (bddIdSource s) r
   where restrict' Zero = return Zero
         restrict' One = return One
@@ -279,9 +232,9 @@ restrictAll :: ROBDD -> [(Var, Bool)] -> ROBDD
 restrictAll bdd@(ROBDD _ _ Zero) _ = bdd
 restrictAll bdd@(ROBDD _ _ One) _ = bdd
 restrictAll (ROBDD revMap idSrc bdd) vals =
-  let (r, s) = runState (restrict' bdd) emptyBDDState { bddIdSource = idSrc
-                                                      , bddRevMap = revMap
-                                                      }
+  let (r, s) = runBDDContext (restrict' bdd) emptyBDDState { bddIdSource = idSrc
+                                                           , bddRevMap = revMap
+                                                           }
   in ROBDD (bddRevMap s) (bddIdSource s) r
   where valMap = M.fromList vals
         restrict' Zero = return Zero
@@ -307,7 +260,7 @@ neg :: ROBDD -> ROBDD
 neg (ROBDD _ _ bdd) =
   -- Everything gets re-allocated so don't bother trying to re-use the
   -- revmap or idsource
-  let (r, s) = runState (negate' bdd) emptyBDDState
+  let (r, s) = runBDDContext (negate' bdd) emptyBDDState
   in ROBDD (bddRevMap s) (bddIdSource s) r
   where negate' Zero = return One
         negate' One = return Zero
@@ -318,6 +271,8 @@ neg (ROBDD _ _ bdd) =
           memoNode uid n
           return n
 
+-- | Return an arbitrary assignment of values to variables to make the
+-- formula true
 anySat :: ROBDD -> Maybe ([(Var, Bool)])
 anySat (ROBDD _ _ Zero) = Nothing
 anySat (ROBDD _ _ One) = Just []
@@ -333,9 +288,11 @@ anySat (ROBDD _ _ bdd) = Just $ sat' bdd []
 
 -- TODO: satCount, allSat
 
--- | The MK operation.  Re-use an existing BDD node if possible.
+-- The MK operation.  Re-use an existing BDD node if possible.
 -- Otherwise create a new node with the provided NodeId, updating the
--- tables.  This is not exported and just used internally.
+-- tables.  This is not exported and just used internally.  It lives
+-- in the BDDContext monad, which holds the result cache (revLookup
+-- map)
 mk :: Var -> BDD -> BDD -> BDDContext a BDD
 mk v low high = do
   s <- get
@@ -350,36 +307,38 @@ mk v low high = do
       -- Make a new node
       Nothing -> revInsert v low high
 
+-- Helpers for mk
+revLookup :: Var -> BDD -> BDD -> RevMap -> (Maybe BDD)
+revLookup v leftTarget rightTarget revMap = do
+  M.lookup (v, nodeUID leftTarget, nodeUID rightTarget) revMap
 
--- Testing stuff
+-- Create a new node for v with the given high and low edges.
+-- Insert it into the revMap and return it.
+revInsert :: Var -> BDD -> BDD -> BDDContext a BDD
+revInsert v lowTarget highTarget = do
+  s <- get
+  let revMap = bddRevMap s
+      (nodeId:rest) = bddIdSource s
+      revMap' = M.insert (v, nodeUID lowTarget, nodeUID highTarget) newNode revMap
+      newNode = BDD lowTarget v highTarget nodeId
+  put $ s { bddRevMap = revMap'
+          , bddIdSource = rest }
+
+  return newNode
 
 
--- main = do
---   let x0 = makeVar 0
---       x1 = makeVar 1
---       x2 = makeVar 2
---       f1 = and x0 x1
---       f2 = or f1 x2
---       f3 = or f2 makeTrue -- tautology
---       f4 = restrict f2 1 False
---       f5 = neg f2
---       dag = makeDAG f5
 
---   viewDAG dag
+-- Evaluation contexts are tags used in the memoization table to
+-- differentiate memo entries from different contexts.  This is
+-- important for the genericApply function, which has a set of
+-- memoized values for its arguments.  It recursively calls the normal
+-- apply driver, which must maintain separate memoized values
+-- (otherwise you get incorrect results).
+type EvaluationContext = Int
 
--- testQuant = do
---   let [x0, x1, x2, x3] = map makeVar [0, 1, 2, 3]
---       f1 = and x0 x1
---       f2 = and x1 x2
---       f3 = x3
---       f4 = and f2 f3
---       f5 = and f1 f4
---       q1 = exist f5 2
---       q2 = applyExists (&&) f1 f4 [2]
---       dag0 = makeDAG f5
---       dag1 = makeDAG q1
---       dag2 = makeDAG q2
+stdCtxt :: EvaluationContext
+stdCtxt = 1
 
---   viewDAG dag0
---   viewDAG dag1
---   viewDAG dag2
+innerCtxt :: EvaluationContext
+innerCtxt = 2
+
