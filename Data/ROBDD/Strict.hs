@@ -2,6 +2,8 @@ module Data.ROBDD.Strict ( BDD(..)
                          , ROBDD(..)
                          , apply
                          , applyExists
+                         , applyForAll
+                         , applyUnique
                          , restrict
                          , restrictAll
                          , anySat
@@ -143,25 +145,29 @@ forAll bdd var = and (restrict bdd var True) (restrict bdd var False)
 -- we need to build a new one on the fly for the result BDD.
 apply :: (Bool -> Bool -> Bool) -> ROBDD -> ROBDD -> ROBDD
 apply op (ROBDD _ _ bdd1) (ROBDD _ _ bdd2) =
-  let (bdd, s) = runState (applyInner op bdd1 bdd2) emptyBDDState
+  let (bdd, s) = runState (applyInner op stdCtxt bdd1 bdd2) emptyBDDState
       -- FIXME: Remove unused bindings in the revmap to allow the
       -- runtime to GC unused nodes
   in ROBDD (bddRevMap s) (bddIdSource s) bdd
 
-applyInner :: (Bool -> Bool -> Bool) -> BDD -> BDD -> BDDContext (NodeId, NodeId) BDD
-applyInner op bdd1 bdd2 = appBase bdd1 bdd2
-  where appBase :: BDD -> BDD -> BDDContext (NodeId, NodeId) BDD
-        appBase lhs rhs = memoize (nodeUID lhs, nodeUID rhs) $ do
+type BinBoolFunc = Bool -> Bool -> Bool
+
+-- This is the main implementation of apply, but also re-used for the
+-- combined apply/quantify operations.
+applyInner :: BinBoolFunc -> EvaluationContext -> BDD -> BDD -> BDDContext (Int, NodeId, NodeId) BDD
+applyInner op ctxt bdd1 bdd2 = appBase bdd1 bdd2
+  where appBase :: BDD -> BDD -> BDDContext (EvaluationContext, NodeId, NodeId) BDD
+        appBase lhs rhs = memoize (ctxt, nodeUID lhs, nodeUID rhs) $ do
           case maybeApply op lhs rhs of
             Just True -> return One
             Just False -> return Zero
             Nothing -> appRec lhs rhs
 
-        appRec :: BDD -> BDD -> BDDContext (NodeId, NodeId) BDD
+        appRec :: BDD -> BDD -> BDDContext (EvaluationContext, NodeId, NodeId) BDD
         appRec lhs rhs = do
           (v, l', h') <- applyRecCore appBase lhs rhs
           newNode <- mk v l' h'
-          memoNode (nodeUID lhs, nodeUID rhs) newNode
+          memoNode (ctxt, nodeUID lhs, nodeUID rhs) newNode
           return newNode
 
 maybeApply :: (Bool -> Bool -> Bool) -> BDD -> BDD -> Maybe Bool
@@ -177,12 +183,14 @@ toBool _ = Nothing
 
 applyRecCore :: (Monad m) => (BDD -> BDD -> m BDD) -> BDD -> BDD -> m (Var, BDD, BDD)
 applyRecCore appBase lhs rhs = case lhs `bddCmp` rhs of
-  -- Vars are the same
+  -- Vars are the same, so use high and low of both lhs and rhs as the
+  -- sub-problem
   EQ -> do
     newLowNode <- appBase (lowEdge lhs) (lowEdge rhs)
     newHighNode <- appBase (highEdge lhs) (highEdge rhs)
     return (nodeVar lhs, newLowNode, newHighNode)
-  -- Var1 is less than var2
+  -- Var1 is less than var2, so only take the low/high edges of the
+  -- lhs
   LT -> do
     newLowNode <- appBase (lowEdge lhs) rhs
     newHighNode <- appBase (highEdge lhs) rhs
@@ -194,27 +202,33 @@ applyRecCore appBase lhs rhs = case lhs `bddCmp` rhs of
     newHighNode <- appBase lhs (highEdge rhs)
     return (nodeVar rhs, newLowNode, newHighNode)
 
+type EvaluationContext = Int
 
--- | A variant of apply that existentially quantifies out the provided
--- list of variables on the fly during the bottom-up construction of
--- the result.  This is much more efficient than performing the
--- quantification after the apply.
-applyExists :: (Bool -> Bool -> Bool) -> ROBDD -> ROBDD -> [Var] -> ROBDD
-applyExists op (ROBDD _ _ bdd1) (ROBDD _ _ bdd2) evars =
+stdCtxt :: EvaluationContext
+stdCtxt = 1
+
+innerCtxt :: EvaluationContext
+innerCtxt = 2
+
+-- This is the main implementation of the combined apply/quantify
+-- operators.  They are really all the same except for the
+-- quantification operator.
+genericApply :: BinBoolFunc -> BinBoolFunc ->
+                ROBDD -> ROBDD -> [Var] -> ROBDD
+genericApply quantifier op (ROBDD _ _ bdd1) (ROBDD _ _ bdd2) evars =
   let (bdd, s) = runState (appBase bdd1 bdd2) emptyBDDState
   in ROBDD (bddRevMap s) (bddIdSource s) bdd
   where varSet = S.fromList evars
-        appBase :: BDD -> BDD -> BDDContext (NodeId, NodeId) BDD
-        appBase lhs rhs = memoize (nodeUID lhs, nodeUID rhs) $ do
+        appBase :: BDD -> BDD -> BDDContext (EvaluationContext, NodeId, NodeId) BDD
+        appBase lhs rhs = memoize (stdCtxt, nodeUID lhs, nodeUID rhs) $ do
           case maybeApply op lhs rhs of
             Just True -> return One
             Just False -> return Zero
             Nothing -> appRec lhs rhs
-        appRec :: BDD -> BDD -> BDDContext (NodeId, NodeId) BDD
+        appRec :: BDD -> BDD -> BDDContext (EvaluationContext, NodeId, NodeId) BDD
         appRec lhs rhs = do
-          let topVar = max (nodeVar lhs) (nodeVar rhs)
           (v', l', h') <- applyRecCore appBase lhs rhs
-          newNode <- case topVar `S.member` varSet of
+          newNode <- case v' `S.member` varSet of
             -- Standard case - we are not projecting out this variable
             -- so just let mk handle creating a new node if necessary
             False -> mk v' l' h'
@@ -223,10 +237,21 @@ applyExists op (ROBDD _ _ bdd1) (ROBDD _ _ bdd2) evars =
             -- building the tree via a call to or.  This re-uses the
             -- current BDD context and so does not use the top-level
             -- or, but the underlying machinery
-            True -> applyInner (||) l' h'
-          memoNode (nodeUID lhs, nodeUID rhs) newNode
+            True -> applyInner quantifier innerCtxt l' h'
+          memoNode (stdCtxt, nodeUID lhs, nodeUID rhs) newNode
           return newNode
 
+
+-- | A variant of apply that existentially quantifies out the provided
+-- list of variables on the fly during the bottom-up construction of
+-- the result.  This is much more efficient than performing the
+-- quantification after the apply.
+applyExists :: (Bool -> Bool -> Bool) -> ROBDD -> ROBDD -> [Var] -> ROBDD
+applyExists = genericApply (||)
+applyUnique :: (Bool -> Bool -> Bool) -> ROBDD -> ROBDD -> [Var] -> ROBDD
+applyUnique = genericApply boolXor
+applyForAll :: (Bool -> Bool -> Bool) -> ROBDD -> ROBDD -> [Var] -> ROBDD
+applyForAll = genericApply (&&)
 
 
 restrict :: ROBDD -> Var -> Bool -> ROBDD
@@ -383,3 +408,20 @@ main = do
       dag = makeDAG f5
 
   viewDAG dag
+
+testQuant = do
+  let [x0, x1, x2, x3] = map makeVar [0, 1, 2, 3]
+      f1 = and x0 x1
+      f2 = and x1 x2
+      f3 = x3
+      f4 = and f2 f3
+      f5 = and f1 f4
+      q1 = exist f5 2
+      q2 = applyExists (&&) f1 f4 [2]
+      dag0 = makeDAG f5
+      dag1 = makeDAG q1
+      dag2 = makeDAG q2
+
+  viewDAG dag0
+  viewDAG dag1
+  viewDAG dag2
