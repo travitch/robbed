@@ -55,7 +55,7 @@ library
   build-depends: hamtmap, hashable, base == 4.*, mtl == 2.*, fgl, graphviz, hashmap
 
   -- Modules not exported by this package.
-  Other-modules: Data.ROBDD.Strict.Types
+  Other-modules: Data.ROBDD.Strict.Types, Data.ROBDD.BooleanFunctions
 
   -- Extra tools (e.g. alex, hsc2hs, ...) needed to build the source.
   -- Build-tools:
@@ -64,7 +64,7 @@ library
 
 executable quant-tests
   if flag(buildTests)
-    build-depends: robbed, base > 3 && < 5
+    build-depends: robbed, base > 3 && < 5, random
   else
     buildable: False
 

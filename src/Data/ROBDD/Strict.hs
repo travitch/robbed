@@ -232,6 +232,7 @@ genericApply quantifier op (ROBDD _ _ bdd1) (ROBDD _ _ bdd2) evars =
             -- building the tree via a call to or.  This re-uses the
             -- current BDD context and so does not use the top-level
             -- or, but the underlying machinery
+            -- See http://www.kenmcmil.com/pubs/thesis.pdf
             True -> applyInner quantifier innerCtxt l' h'
           memoNode (stdCtxt, nodeUID lhs, nodeUID rhs) newNode
           return newNode
