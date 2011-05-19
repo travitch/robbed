@@ -11,7 +11,7 @@ module Data.ROBDD.Strict.Memoization ( emptyBDDState
 
 import Control.Monad.State
 import Data.Hashable
-import qualified Data.HamtMap as M
+import qualified Data.HashMap.Strict as M
 import Data.ROBDD.Strict.Types
 
 -- Types used internally; these are for a State monad that tracks memo

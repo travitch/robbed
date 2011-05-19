@@ -23,7 +23,7 @@ module Data.ROBDD.Strict ( ROBDD(..)
                          ) where
 
 import Prelude hiding (and, or)
-import qualified Data.HamtMap as M
+import qualified Data.HashMap.Strict as M
 import qualified Data.HashSet as S
 
 import Data.ROBDD.BooleanFunctions

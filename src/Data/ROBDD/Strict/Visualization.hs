@@ -3,7 +3,7 @@ module Data.ROBDD.Strict.Visualization ( DAG
                                        , viewDAG
                                        ) where
 
-import qualified Data.HamtMap as M
+import qualified Data.HashMap.Strict as M
 import Data.Graph.Inductive (Gr, mkGraph)
 import Data.GraphViz
 

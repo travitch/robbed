@@ -52,7 +52,10 @@ library
   exposed-modules: Data.ROBDD.Strict, Data.ROBDD, Data.ROBDD.Strict.Visualization
 
   -- Packages needed in order to build this package.
-  build-depends: hamtmap, hashable, base == 4.*, mtl == 2.*, fgl, graphviz, hashmap
+  build-depends: unordered-containers > 0.1.2,
+                 hashable,
+                 base == 4.*, mtl == 2.*,
+                 fgl, graphviz
 
   -- Modules not exported by this package.
   Other-modules: Data.ROBDD.BooleanFunctions,
