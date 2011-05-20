@@ -42,6 +42,11 @@ instance Eq BDD where
   (BDD _ _ _ id1) == (BDD _ _ _ id2) = id1 == id2
   _ == _ = False
 
+-- ROBDDs are equal as long as their payload BDDs are equal; the
+-- metadata does not need to be the same
+instance Eq ROBDD where
+  (ROBDD _ _ bdd1) == (ROBDD _ _ bdd2) = bdd1 == bdd2
+
 instance Labellable BDD where
   toLabel Zero = toLabel "Zero"
   toLabel One = toLabel "One"
