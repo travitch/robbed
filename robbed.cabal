@@ -40,7 +40,7 @@ build-type:          Simple
 -- Extra-source-files:
 
 -- Constraint on the version of Cabal needed to build this package.
-cabal-version:       >=1.8
+cabal-version:       >=1.9.2
 
 flag buildTests
   description: Build the test programs
@@ -58,7 +58,7 @@ library
                  fgl, graphviz
 
   -- Modules not exported by this package.
-  Other-modules: Data.ROBDD.BooleanFunctions,
+  other-modules: Data.ROBDD.BooleanFunctions,
                  Data.ROBDD.Strict.Memoization,
                  Data.ROBDD.Strict.Types
 
@@ -67,12 +67,23 @@ library
 
   ghc-options: -Wall
 
-executable quant-tests
-  if flag(buildTests)
-    build-depends: robbed, base > 3 && < 5, random
-  else
-    buildable: False
-
+test-suite quant-tests
+  type: exitcode-stdio-1.0
   main-is: QuantTests.hs
   hs-source-dirs: tests
+  ghc-options: -Wall
+  build-depends: robbed,
+                 base > 3 && < 5,
+                 HUnit,
+                 test-framework,
+                 test-framework-hunit
+
+-- executable quant-tests
+--   if flag(buildTests)
+--     build-depends: robbed, base > 3 && < 5, random
+--   else
+--     buildable: False
+
+--   main-is: QuantTests.hs
+--   hs-source-dirs: tests
 
