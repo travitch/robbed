@@ -48,7 +48,8 @@ makeVar :: Var -> ROBDD
 makeVar v
   | v >= 0 = ROBDD M.empty [] bdd
   | otherwise = error "Variable numbers must be >= 0"
-  where bdd = BDD Zero v One 0
+  where
+    bdd = BDD Zero v One 0
 
 
 and :: ROBDD -> ROBDD -> ROBDD
@@ -101,19 +102,20 @@ apply op (ROBDD _ _ bdd1) (ROBDD _ _ bdd2) =
 -- combined apply/quantify operations.
 applyInner :: BinBoolFunc -> EvaluationContext -> BDD -> BDD -> BDDContext (Int, NodeId, NodeId) BDD
 applyInner op ctxt bdd1 bdd2 = appBase bdd1 bdd2
-  where appBase :: BDD -> BDD -> BDDContext (EvaluationContext, NodeId, NodeId) BDD
-        appBase lhs rhs = memoize (ctxt, nodeUID lhs, nodeUID rhs) $ do
-          case maybeApply op lhs rhs of
-            Just True -> return One
-            Just False -> return Zero
-            Nothing -> appRec lhs rhs
+  where
+    appBase :: BDD -> BDD -> BDDContext (EvaluationContext, NodeId, NodeId) BDD
+    appBase lhs rhs = memoize (ctxt, nodeUID lhs, nodeUID rhs) $ do
+      case maybeApply op lhs rhs of
+        Just True -> return One
+        Just False -> return Zero
+        Nothing -> appRec lhs rhs
 
-        appRec :: BDD -> BDD -> BDDContext (EvaluationContext, NodeId, NodeId) BDD
-        appRec lhs rhs = do
-          (v, l', h') <- genApplySubproblems appBase lhs rhs
-          newNode <- mk v l' h'
-          memoNode (ctxt, nodeUID lhs, nodeUID rhs) newNode
-          return newNode
+    appRec :: BDD -> BDD -> BDDContext (EvaluationContext, NodeId, NodeId) BDD
+    appRec lhs rhs = do
+      (v, l', h') <- genApplySubproblems appBase lhs rhs
+      newNode <- mk v l' h'
+      memoNode (ctxt, nodeUID lhs, nodeUID rhs) newNode
+      return newNode
 
 maybeApply :: (Bool -> Bool -> Bool) -> BDD -> BDD -> Maybe Bool
 maybeApply op lhs rhs = do
@@ -160,35 +162,36 @@ genericApply :: BinBoolFunc -> BinBoolFunc ->
 genericApply quantifier op (ROBDD _ _ bdd1) (ROBDD _ _ bdd2) evars =
   let (bdd, s) = runBDDContext (appBase bdd1 bdd2) emptyBDDState
   in ROBDD (bddRevMap s) (bddIdSource s) bdd
-  where varSet = S.fromList evars
-        appBase :: BDD -> BDD -> BDDContext (EvaluationContext, NodeId, NodeId) BDD
-        appBase lhs rhs = memoize (stdCtxt, nodeUID lhs, nodeUID rhs) $ do
-          case maybeApply op lhs rhs of
-            Just True -> return One
-            Just False -> return Zero
-            Nothing -> appRec lhs rhs
-        appRec :: BDD -> BDD -> BDDContext (EvaluationContext, NodeId, NodeId) BDD
-        appRec lhs rhs = do
-          (v', l', h') <- genApplySubproblems appBase lhs rhs
-          newNode <- case v' `S.member` varSet of
-            -- Standard case - we are not projecting out this variable
-            -- so just let mk handle creating a new node if necessary
-            False -> mk v' l' h'
-            -- If this variable is to be quantified out, this magic is
-            -- due to McMillan 92; we quantify it out while we are
-            -- building the tree via a call to or.  This re-uses the
-            -- current BDD context and so does not use the top-level
-            -- or, but the underlying machinery
-            -- See http://www.kenmcmil.com/pubs/thesis.pdf
-            --
-            -- The quantification returns the formula that would
-            -- result if a variable V is declared to be forall,
-            -- unique, or exists; it does this by invoking either and,
-            -- xor, or or on the sub-problems for any step where V is
-            -- the leading variable.
-            True -> applyInner quantifier innerCtxt l' h'
-          memoNode (stdCtxt, nodeUID lhs, nodeUID rhs) newNode
-          return newNode
+  where
+    varSet = S.fromList evars
+    appBase :: BDD -> BDD -> BDDContext (EvaluationContext, NodeId, NodeId) BDD
+    appBase lhs rhs = memoize (stdCtxt, nodeUID lhs, nodeUID rhs) $ do
+      case maybeApply op lhs rhs of
+        Just True -> return One
+        Just False -> return Zero
+        Nothing -> appRec lhs rhs
+    appRec :: BDD -> BDD -> BDDContext (EvaluationContext, NodeId, NodeId) BDD
+    appRec lhs rhs = do
+      (v', l', h') <- genApplySubproblems appBase lhs rhs
+      newNode <- case v' `S.member` varSet of
+        False -> mk v' l' h'
+        -- ^ Standard case - we are not projecting out this variable
+        -- so just let mk handle creating a new node if necessary
+        True -> applyInner quantifier innerCtxt l' h'
+        -- ^ If this variable is to be quantified out, this magic is
+        -- due to McMillan 92; we quantify it out while we are
+        -- building the tree via a call to or.  This re-uses the
+        -- current BDD context and so does not use the top-level
+        -- or, but the underlying machinery
+        -- See http://www.kenmcmil.com/pubs/thesis.pdf
+        --
+        -- The quantification returns the formula that would
+        -- result if a variable V is declared to be forall,
+        -- unique, or exists; it does this by invoking either and,
+        -- xor, or or on the sub-problems for any step where V is
+        -- the leading variable.
+      memoNode (stdCtxt, nodeUID lhs, nodeUID rhs) newNode
+      return newNode
 
 
 -- | A variant of apply that existentially quantifies out the provided
@@ -211,20 +214,21 @@ restrict (ROBDD revMap idSrc bdd) v b =
                                                           , bddRevMap = revMap
                                                           }
   in ROBDD (bddRevMap s) (bddIdSource s) r
-  where restrict' Zero = return Zero
-        restrict' One = return One
-        restrict' o@(BDD low var high uid) = memoize uid $ do
-          case var `compare` v of
-            GT -> return o
-            LT -> do
-              low' <- restrict' low
-              high' <- restrict' high
-              n <- mk var low' high'
-              memoNode uid n
-              return n
-            EQ -> case b of
-              True -> restrict' high
-              False -> restrict' low
+  where
+    restrict' Zero = return Zero
+    restrict' One = return One
+    restrict' o@(BDD low var high uid) = memoize uid $ do
+      case var `compare` v of
+        GT -> return o
+        LT -> do
+          low' <- restrict' low
+          high' <- restrict' high
+          n <- mk var low' high'
+          memoNode uid n
+          return n
+        EQ -> case b of
+          True -> restrict' high
+          False -> restrict' low
 
 -- | restrict over a list of variable/value pairs.  This should be
 -- more efficient than repeated calls to restrict.
@@ -236,20 +240,26 @@ restrictAll (ROBDD revMap idSrc bdd) vals =
                                                            , bddRevMap = revMap
                                                            }
   in ROBDD (bddRevMap s) (bddIdSource s) r
-  where valMap = M.fromList vals
-        restrict' Zero = return Zero
-        restrict' One = return One
-        restrict' (BDD low var high uid) = memoize uid $ do
-          case var `M.lookup` valMap of
-            Just b -> case b of
-              True -> restrict' high
-              False -> restrict' low
-            Nothing -> do
-              low' <- restrict' low
-              high' <- restrict' high
-              n <- mk var low' high'
-              memoNode uid n
-              return n
+  where
+    valMap = M.fromList vals
+    restrict' Zero = return Zero
+    restrict' One = return One
+    restrict' (BDD low var high uid) = memoize uid $ do
+      case var `M.lookup` valMap of
+        Just b -> case b of
+          True -> restrict' high
+          False -> restrict' low
+        Nothing -> do
+          low' <- restrict' low
+          high' <- restrict' high
+          n <- mk var low' high'
+          memoNode uid n
+          return n
+
+-- | Rename BDD variables according to the @mapping@ provided as an
+-- alist.
+replace :: ROBDD -> [(Var, Var)] -> ROBDD
+replace (ROBDD revMap idSrc bdd) mapping = undefined
 
 -- | negate the given BDD.  This implementation is somewhat more
 -- efficient than the naiive translation to BDD -> False.
@@ -262,31 +272,32 @@ neg (ROBDD _ _ bdd) =
   -- revmap or idsource
   let (r, s) = runBDDContext (negate' bdd) emptyBDDState
   in ROBDD (bddRevMap s) (bddIdSource s) r
-  where negate' Zero = return One
-        negate' One = return Zero
-        negate' (BDD low var high uid) = memoize uid $ do
-          low' <- negate' low
-          high' <- negate' high
-          n <- mk var low' high'
-          memoNode uid n
-          return n
+  where
+    negate' Zero = return One
+    negate' One = return Zero
+    negate' (BDD low var high uid) = memoize uid $ do
+      low' <- negate' low
+      high' <- negate' high
+      n <- mk var low' high'
+      memoNode uid n
+      return n
 
 -- | Return an arbitrary assignment of values to variables to make the
 -- formula true
 anySat :: ROBDD -> Maybe ([(Var, Bool)])
 anySat (ROBDD _ _ Zero) = Nothing
 anySat (ROBDD _ _ One) = Just []
--- FIXME: Might need to make sat' strict in the accumulator
 anySat (ROBDD _ _ bdd) = Just $ sat' bdd []
-  where sat' One acc = acc
-        sat' Zero _ = error "anySat should not hit Zero"
-        sat' (BDD low v high _) acc =
-          case low of
-            Zero -> (v, True) : sat' high acc
-            _ -> (v, False) : sat' low acc
+  where
+    sat' One acc = acc
+    sat' Zero _ = error "anySat should not hit Zero"
+    sat' (BDD low v high _) acc =
+      case low of
+        Zero -> (v, True) : sat' high acc
+        _ -> (v, False) : sat' low acc
 
 
--- TODO: satCount, allSat
+-- TODO: satCount, allSat, compose
 
 -- The MK operation.  Re-use an existing BDD node if possible.
 -- Otherwise create a new node with the provided NodeId, updating the
