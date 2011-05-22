@@ -257,9 +257,21 @@ restrictAll (ROBDD revMap idSrc bdd) vals =
           return n
 
 -- | Rename BDD variables according to the @mapping@ provided as an
--- alist.
+-- alist.  This can be a potentially very expensive operation.
 replace :: ROBDD -> [(Var, Var)] -> ROBDD
-replace (ROBDD revMap idSrc bdd) mapping = undefined
+replace (ROBDD revMap idSrc bdd) mapping =
+  let (r, s) = runBDDContext (replace' bdd) emptyBDDState { bddIdSource = idSrc
+                                                          , bddRevMap = revMap
+                                                          }
+  in ROBDD (bddRevMap s) (bddIdSource s) r
+  where
+    replace' Zero = return Zero
+    replace' One = return One
+    replace' (BDD low var high uid) = memoize uid $ do
+      low' <- replace' low
+      high' <- replace' high
+      n <- correct var low' high'
+      memoNode uid
 
 -- | negate the given BDD.  This implementation is somewhat more
 -- efficient than the naiive translation to BDD -> False.
