@@ -8,6 +8,7 @@ module Data.ROBDD.Strict ( ROBDD
                          , replace
                          , anySat
                          , satCount
+                         , allSat
                          , makeVar
                          , makeTrue
                          , makeFalse
@@ -25,9 +26,12 @@ module Data.ROBDD.Strict ( ROBDD
                          ) where
 
 import Prelude hiding (and, or)
+import Data.Foldable (toList)
 import qualified Data.HashMap.Strict as M
 import qualified Data.HashSet as S
 import Data.Hashable
+import qualified Data.Sequence as Seq
+import Data.Sequence ((><))
 
 import Data.ROBDD.BooleanFunctions
 import Data.ROBDD.Strict.Types
@@ -341,7 +345,7 @@ satCount (ROBDD revMap _ bdd) =
 
 -- | Return an arbitrary assignment of values to variables to make the
 -- formula true
-anySat :: ROBDD -> Maybe ([(Var, Bool)])
+anySat :: ROBDD -> Maybe [(Var, Bool)]
 anySat (ROBDD _ _ Zero) = Nothing
 anySat (ROBDD _ _ One) = Just []
 anySat (ROBDD _ _ bdd) = Just $ sat' bdd []
@@ -353,8 +357,24 @@ anySat (ROBDD _ _ bdd) = Just $ sat' bdd []
         Zero -> (v, True) : sat' high acc
         _ -> (v, False) : sat' low acc
 
+-- | Extract all satisfying variable assignments to the BDD as a list of
+-- association lists.  O(2^n)
+allSat :: ROBDD -> [[(Var, Bool)]]
+allSat (ROBDD _ _ Zero) = []
+allSat (ROBDD _ _ One) = [[]]
+allSat (ROBDD _ _ bdd) =
+  toList $ fst $ runBDDContext (sat' bdd) emptyBDDState
+  where
+    sat' Zero = return Seq.empty
+    sat' One = return $ Seq.singleton []
+    sat' (BDD low v high uid _) = memoize uid $ do
+      l <- sat' low
+      r <- sat' high
+      let l' = fmap ((v,False):) l
+          r' = fmap ((v,True):) r
+      return (l' >< r')
 
--- TODO: satCount, allSat, compose
+-- TODO: compose
 
 -- The MK operation.  Re-use an existing BDD node if possible.
 -- Otherwise create a new node with the provided NodeId, updating the

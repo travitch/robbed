@@ -53,7 +53,7 @@ library
 
   -- Packages needed in order to build this package.
   build-depends: unordered-containers > 0.1.2,
-                 hashable,
+                 hashable, containers,
                  base == 4.*, mtl == 2.*,
                  fgl, graphviz
 
