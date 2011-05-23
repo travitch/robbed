@@ -7,6 +7,7 @@ module Data.ROBDD.Strict ( ROBDD
                          , restrictAll
                          , replace
                          , anySat
+                         , satCount
                          , makeVar
                          , makeTrue
                          , makeFalse
@@ -317,6 +318,21 @@ neg (ROBDD _ _ bdd) =
       low' <- negate' low
       high' <- negate' high
       mk var low' high'
+
+-- | Count the number of satisfying assignments to the BDD.
+-- O(|v|)
+satCount :: ROBDD -> Int
+satCount (ROBDD _ _ bdd) =
+  fst $ runBDDContext (count' bdd) emptyBDDState
+  where
+    count' Zero = return 0
+    count' One = return 1
+    count' (BDD low v high uid _) = memoize uid $ do
+      l <- count' low
+      r <- count' high
+      let lc = 2 ^ (nodeVar low - v - 1)
+          hc = 2 ^ (nodeVar high - v - 1)
+      return (lc*l + hc*r)
 
 -- | Return an arbitrary assignment of values to variables to make the
 -- formula true
