@@ -59,7 +59,6 @@ library
 
   -- Modules not exported by this package.
   other-modules: Data.ROBDD.BooleanFunctions,
-                 Data.ROBDD.Strict.Memoization,
                  Data.ROBDD.Strict.Types
 
   -- Extra tools (e.g. alex, hsc2hs, ...) needed to build the source.
