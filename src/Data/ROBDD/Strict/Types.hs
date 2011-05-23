@@ -7,6 +7,7 @@ module Data.ROBDD.Strict.Types ( BDD(..)
                                , DAG
                                , makeDAG
                                , bddCmp
+                               , varBddCmp
                                , highEdge
                                , lowEdge
                                , nodeVar
@@ -74,6 +75,11 @@ One `bddCmp` Zero = LT
 Zero `bddCmp` (BDD _ _ _ _) = GT
 One `bddCmp` (BDD _ _ _ _) = GT
 (BDD _ v1 _ _) `bddCmp` (BDD _ v2 _ _) = v1 `compare` v2
+
+varBddCmp :: Var -> BDD -> Ordering
+varBddCmp _ Zero = LT
+varBddCmp _ One = LT
+varBddCmp v (BDD _ b _ _) = v `compare` b
 
 highEdge :: BDD -> BDD
 highEdge (BDD _ _ h _) = h

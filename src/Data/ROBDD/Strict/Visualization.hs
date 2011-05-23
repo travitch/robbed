@@ -1,4 +1,4 @@
-module Data.ROBDD.Strict.Visualization ( viewDAG ) where
+module Data.ROBDD.Strict.Visualization ( viewDAG, makeDAG ) where
 
 import Data.GraphViz
 import Data.ROBDD.Strict.Types

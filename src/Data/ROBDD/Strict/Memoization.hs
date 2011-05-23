@@ -1,8 +1,8 @@
 module Data.ROBDD.Strict.Memoization ( emptyBDDState
                                      , BDDContext
                                      , BDDState(..)
-                                     , memoNode
-                                     , getMemoNode
+                                     -- , memoNode
+                                     -- , getMemoNode
                                      , memoize
                                      , runBDDContext
                                      , get
@@ -53,7 +53,10 @@ memoize uid act = do
   mem <- getMemoNode uid
   case mem of
     Just node -> return node
-    Nothing -> act
+    Nothing -> do
+      v <- act
+      memoNode uid v
+      return v
 
 runBDDContext :: State s a -> s -> (a, s)
 runBDDContext = runState

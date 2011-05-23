@@ -5,6 +5,7 @@ module Data.ROBDD.Strict ( ROBDD(..)
                          , applyUnique
                          , restrict
                          , restrictAll
+                         , replace
                          , anySat
                          , makeVar
                          , makeTrue
@@ -114,7 +115,7 @@ applyInner op ctxt bdd1 bdd2 = appBase bdd1 bdd2
     appRec lhs rhs = do
       (v, l', h') <- genApplySubproblems appBase lhs rhs
       newNode <- mk v l' h'
-      memoNode (ctxt, nodeUID lhs, nodeUID rhs) newNode
+      -- memoNode (ctxt, nodeUID lhs, nodeUID rhs) newNode
       return newNode
 
 maybeApply :: (Bool -> Bool -> Bool) -> BDD -> BDD -> Maybe Bool
@@ -190,7 +191,7 @@ genericApply quantifier op (ROBDD _ _ bdd1) (ROBDD _ _ bdd2) evars =
         -- unique, or exists; it does this by invoking either and,
         -- xor, or or on the sub-problems for any step where V is
         -- the leading variable.
-      memoNode (stdCtxt, nodeUID lhs, nodeUID rhs) newNode
+      -- memoNode (stdCtxt, nodeUID lhs, nodeUID rhs) newNode
       return newNode
 
 
@@ -224,7 +225,7 @@ restrict (ROBDD revMap idSrc bdd) v b =
           low' <- restrict' low
           high' <- restrict' high
           n <- mk var low' high'
-          memoNode uid n
+          -- memoNode uid n
           return n
         EQ -> case b of
           True -> restrict' high
@@ -253,7 +254,7 @@ restrictAll (ROBDD revMap idSrc bdd) vals =
           low' <- restrict' low
           high' <- restrict' high
           n <- mk var low' high'
-          memoNode uid n
+          -- memoNode uid n
           return n
 
 -- | Rename BDD variables according to the @mapping@ provided as an
@@ -265,13 +266,38 @@ replace (ROBDD revMap idSrc bdd) mapping =
                                                           }
   in ROBDD (bddRevMap s) (bddIdSource s) r
   where
+    m = M.fromList mapping
     replace' Zero = return Zero
     replace' One = return One
-    replace' (BDD low var high uid) = memoize uid $ do
+    replace' (BDD low var high uid) = memoize (stdCtxt, uid) $ do
       low' <- replace' low
       high' <- replace' high
-      n <- correct var low' high'
-      memoNode uid
+      let level = M.lookupDefault var var m
+          -- ^ The remapped level - default is the current level
+      fixSubgraph level uid low' high'
+      -- memoNode (stdCtxt, uid) n
+    -- FIXME: I don't know that uid is the right thing to memoize on
+    -- here...
+    fixSubgraph level uid low high
+      | level `varBddCmp` low == LT && level `varBddCmp` high == LT =
+        {-memoize (innerCtxt, uid)-} (mk level low high)
+      | level `varBddCmp` low == EQ || level `varBddCmp` high == EQ =
+          error "Bad replace?"
+      | otherwise = {- memoize (innerCtxt, uid) $ -} do
+        case low `bddCmp` high of
+          EQ -> do
+            l <- fixSubgraph level (nodeUID low) (lowEdge low) (lowEdge high)
+            r <- fixSubgraph level (nodeUID high) (highEdge low) (highEdge high)
+            mk (nodeVar low) l r
+          LT -> do
+            l <- fixSubgraph level (nodeUID low) (lowEdge low) high
+            r <- fixSubgraph level (nodeUID high) (highEdge low) high
+            mk (nodeVar low) l r
+          GT -> do
+            l <- fixSubgraph level (nodeUID low) low (lowEdge high)
+            r <- fixSubgraph level (nodeUID high) low (highEdge high)
+            mk (nodeVar high) l r
+
 
 -- | negate the given BDD.  This implementation is somewhat more
 -- efficient than the naiive translation to BDD -> False.
@@ -291,7 +317,7 @@ neg (ROBDD _ _ bdd) =
       low' <- negate' low
       high' <- negate' high
       n <- mk var low' high'
-      memoNode uid n
+      -- memoNode uid n
       return n
 
 -- | Return an arbitrary assignment of values to variables to make the
