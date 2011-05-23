@@ -114,9 +114,7 @@ applyInner op ctxt bdd1 bdd2 = appBase bdd1 bdd2
     appRec :: BDD -> BDD -> BDDContext (EvaluationContext, NodeId, NodeId) BDD
     appRec lhs rhs = do
       (v, l', h') <- genApplySubproblems appBase lhs rhs
-      newNode <- mk v l' h'
-      -- memoNode (ctxt, nodeUID lhs, nodeUID rhs) newNode
-      return newNode
+      mk v l' h'
 
 maybeApply :: (Bool -> Bool -> Bool) -> BDD -> BDD -> Maybe Bool
 maybeApply op lhs rhs = do
@@ -174,7 +172,7 @@ genericApply quantifier op (ROBDD _ _ bdd1) (ROBDD _ _ bdd2) evars =
     appRec :: BDD -> BDD -> BDDContext (EvaluationContext, NodeId, NodeId) BDD
     appRec lhs rhs = do
       (v', l', h') <- genApplySubproblems appBase lhs rhs
-      newNode <- case v' `S.member` varSet of
+      case v' `S.member` varSet of
         False -> mk v' l' h'
         -- ^ Standard case - we are not projecting out this variable
         -- so just let mk handle creating a new node if necessary
@@ -191,9 +189,6 @@ genericApply quantifier op (ROBDD _ _ bdd1) (ROBDD _ _ bdd2) evars =
         -- unique, or exists; it does this by invoking either and,
         -- xor, or or on the sub-problems for any step where V is
         -- the leading variable.
-      -- memoNode (stdCtxt, nodeUID lhs, nodeUID rhs) newNode
-      return newNode
-
 
 -- | A variant of apply that existentially quantifies out the provided
 -- list of variables on the fly during the bottom-up construction of
@@ -224,9 +219,7 @@ restrict (ROBDD revMap idSrc bdd) v b =
         LT -> do
           low' <- restrict' low
           high' <- restrict' high
-          n <- mk var low' high'
-          -- memoNode uid n
-          return n
+          mk var low' high'
         EQ -> case b of
           True -> restrict' high
           False -> restrict' low
@@ -253,9 +246,7 @@ restrictAll (ROBDD revMap idSrc bdd) vals =
         Nothing -> do
           low' <- restrict' low
           high' <- restrict' high
-          n <- mk var low' high'
-          -- memoNode uid n
-          return n
+          mk var low' high'
 
 -- | Rename BDD variables according to the @mapping@ provided as an
 -- alist.  This can be a potentially very expensive operation.
@@ -275,7 +266,6 @@ replace (ROBDD revMap idSrc bdd) mapping =
       let level = M.lookupDefault var var m
           -- ^ The remapped level - default is the current level
       fixSubgraph level uid low' high'
-      -- memoNode (stdCtxt, uid) n
     -- FIXME: I don't know that uid is the right thing to memoize on
     -- here...
     fixSubgraph level uid low high
@@ -316,9 +306,7 @@ neg (ROBDD _ _ bdd) =
     negate' (BDD low var high uid) = memoize uid $ do
       low' <- negate' low
       high' <- negate' high
-      n <- mk var low' high'
-      -- memoNode uid n
-      return n
+      mk var low' high'
 
 -- | Return an arbitrary assignment of values to variables to make the
 -- formula true
