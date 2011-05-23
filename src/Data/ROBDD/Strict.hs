@@ -1,4 +1,4 @@
-module Data.ROBDD.Strict ( ROBDD(..)
+module Data.ROBDD.Strict ( ROBDD
                          , apply
                          , applyExists
                          , applyForAll
@@ -26,9 +26,9 @@ module Data.ROBDD.Strict ( ROBDD(..)
 import Prelude hiding (and, or)
 import qualified Data.HashMap.Strict as M
 import qualified Data.HashSet as S
+import Data.Hashable
 
 import Data.ROBDD.BooleanFunctions
-import Data.ROBDD.Strict.Memoization
 import Data.ROBDD.Strict.Types
 
 type BinBoolFunc = Bool -> Bool -> Bool
@@ -41,6 +41,7 @@ makeTrue = ROBDD M.empty [] One
 makeFalse :: ROBDD
 makeFalse = ROBDD M.empty [] Zero
 
+
 -- | Make a single BDD variable with the given number.  The number is
 -- used to identify the variable in other functions (like
 -- quantification).  The number must be non-negative; negative numbers
@@ -50,7 +51,7 @@ makeVar v
   | v >= 0 = ROBDD M.empty [] bdd
   | otherwise = error "Variable numbers must be >= 0"
   where
-    bdd = BDD Zero v One 0
+    bdd = BDD Zero v One 0 (hashNode v Zero One)
 
 
 and :: ROBDD -> ROBDD -> ROBDD
@@ -101,17 +102,18 @@ apply op (ROBDD _ _ bdd1) (ROBDD _ _ bdd2) =
 
 -- This is the main implementation of apply, but also re-used for the
 -- combined apply/quantify operations.
-applyInner :: BinBoolFunc -> EvaluationContext -> BDD -> BDD -> BDDContext (Int, NodeId, NodeId) BDD
+applyInner :: BinBoolFunc -> EvaluationContext -> BDD -> BDD ->
+              BDDContext (Int, NodeId, NodeId) BDD BDD
 applyInner op ctxt bdd1 bdd2 = appBase bdd1 bdd2
   where
-    appBase :: BDD -> BDD -> BDDContext (EvaluationContext, NodeId, NodeId) BDD
+    appBase :: BDD -> BDD -> BDDContext (EvaluationContext, NodeId, NodeId) BDD BDD
     appBase lhs rhs = memoize (ctxt, nodeUID lhs, nodeUID rhs) $ do
       case maybeApply op lhs rhs of
         Just True -> return One
         Just False -> return Zero
         Nothing -> appRec lhs rhs
 
-    appRec :: BDD -> BDD -> BDDContext (EvaluationContext, NodeId, NodeId) BDD
+    appRec :: BDD -> BDD -> BDDContext (EvaluationContext, NodeId, NodeId) BDD BDD
     appRec lhs rhs = do
       (v, l', h') <- genApplySubproblems appBase lhs rhs
       mk v l' h'
@@ -163,13 +165,13 @@ genericApply quantifier op (ROBDD _ _ bdd1) (ROBDD _ _ bdd2) evars =
   in ROBDD (bddRevMap s) (bddIdSource s) bdd
   where
     varSet = S.fromList evars
-    appBase :: BDD -> BDD -> BDDContext (EvaluationContext, NodeId, NodeId) BDD
+    appBase :: BDD -> BDD -> BDDContext (EvaluationContext, NodeId, NodeId) BDD BDD
     appBase lhs rhs = memoize (stdCtxt, nodeUID lhs, nodeUID rhs) $ do
       case maybeApply op lhs rhs of
         Just True -> return One
         Just False -> return Zero
         Nothing -> appRec lhs rhs
-    appRec :: BDD -> BDD -> BDDContext (EvaluationContext, NodeId, NodeId) BDD
+    appRec :: BDD -> BDD -> BDDContext (EvaluationContext, NodeId, NodeId) BDD BDD
     appRec lhs rhs = do
       (v', l', h') <- genApplySubproblems appBase lhs rhs
       case v' `S.member` varSet of
@@ -213,7 +215,7 @@ restrict (ROBDD revMap idSrc bdd) v b =
   where
     restrict' Zero = return Zero
     restrict' One = return One
-    restrict' o@(BDD low var high uid) = memoize uid $ do
+    restrict' o@(BDD low var high uid _) = memoize uid $ do
       case var `compare` v of
         GT -> return o
         LT -> do
@@ -238,7 +240,7 @@ restrictAll (ROBDD revMap idSrc bdd) vals =
     valMap = M.fromList vals
     restrict' Zero = return Zero
     restrict' One = return One
-    restrict' (BDD low var high uid) = memoize uid $ do
+    restrict' (BDD low var high uid _) = memoize uid $ do
       case var `M.lookup` valMap of
         Just b -> case b of
           True -> restrict' high
@@ -260,20 +262,28 @@ replace (ROBDD revMap idSrc bdd) mapping =
     m = M.fromList mapping
     replace' Zero = return Zero
     replace' One = return One
-    replace' (BDD low var high uid) = memoize (stdCtxt, uid) $ do
+    replace' (BDD low var high uid _) = memoize uid $ do
       low' <- replace' low
       high' <- replace' high
       let level = M.lookupDefault var var m
           -- ^ The remapped level - default is the current level
       fixSubgraph level uid low' high'
+      -- innerState <- getBDDState
+      -- let (r, s') = runBDDContext fixup emptyBDDState { bddIdSource = bddIdSource innerState
+      --                                                 , bddRevMap = bddRevMap innerState
+      --                                                 }
+      -- putBDDState emptyBDDState { bddIdSource = bddIdSource s'
+      --                           , bddRevMap = bddRevMap s'
+      --                           }
+      -- return r
     -- FIXME: I don't know that uid is the right thing to memoize on
     -- here...
     fixSubgraph level uid low high
       | level `varBddCmp` low == LT && level `varBddCmp` high == LT =
-        {-memoize (innerCtxt, uid)-} (mk level low high)
+        {-memoize uid-} (mk level low high)
       | level `varBddCmp` low == EQ || level `varBddCmp` high == EQ =
           error "Bad replace?"
-      | otherwise = {- memoize (innerCtxt, uid) $ -} do
+      | otherwise = {-memoize uid $-} do
         case low `bddCmp` high of
           EQ -> do
             l <- fixSubgraph level (nodeUID low) (lowEdge low) (lowEdge high)
@@ -303,7 +313,7 @@ neg (ROBDD _ _ bdd) =
   where
     negate' Zero = return One
     negate' One = return Zero
-    negate' (BDD low var high uid) = memoize uid $ do
+    negate' (BDD low var high uid _) = memoize uid $ do
       low' <- negate' low
       high' <- negate' high
       mk var low' high'
@@ -317,7 +327,7 @@ anySat (ROBDD _ _ bdd) = Just $ sat' bdd []
   where
     sat' One acc = acc
     sat' Zero _ = error "anySat should not hit Zero"
-    sat' (BDD low v high _) acc =
+    sat' (BDD low v high _ _) acc =
       case low of
         Zero -> (v, True) : sat' high acc
         _ -> (v, False) : sat' low acc
@@ -330,9 +340,9 @@ anySat (ROBDD _ _ bdd) = Just $ sat' bdd []
 -- tables.  This is not exported and just used internally.  It lives
 -- in the BDDContext monad, which holds the result cache (revLookup
 -- map)
-mk :: Var -> BDD -> BDD -> BDDContext a BDD
+mk :: Var -> BDD -> BDD -> BDDContext a BDD BDD
 mk v low high = do
-  s <- get
+  s <- getBDDState
 
   let revMap = bddRevMap s
 
@@ -349,17 +359,23 @@ revLookup :: Var -> BDD -> BDD -> RevMap -> (Maybe BDD)
 revLookup v leftTarget rightTarget revMap = do
   M.lookup (v, nodeUID leftTarget, nodeUID rightTarget) revMap
 
+hashNode :: Var -> BDD -> BDD -> Int
+hashNode v low high =
+  v `combine` nodeHash low `combine` nodeHash high
+
 -- Create a new node for v with the given high and low edges.
 -- Insert it into the revMap and return it.
-revInsert :: Var -> BDD -> BDD -> BDDContext a BDD
+revInsert :: Var -> BDD -> BDD -> BDDContext a BDD BDD
 revInsert v lowTarget highTarget = do
-  s <- get
+  s <- getBDDState
   let revMap = bddRevMap s
       (nodeId:rest) = bddIdSource s
       revMap' = M.insert (v, nodeUID lowTarget, nodeUID highTarget) newNode revMap
-      newNode = BDD lowTarget v highTarget nodeId
-  put $ s { bddRevMap = revMap'
-          , bddIdSource = rest }
+      h = hashNode v lowTarget highTarget
+      newNode = BDD lowTarget v highTarget nodeId h
+  putBDDState s { bddRevMap = revMap'
+                , bddIdSource = rest
+                }
 
   return newNode
 
