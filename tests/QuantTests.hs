@@ -1,5 +1,6 @@
 import Control.Applicative
 import Data.List (mapAccumL)
+import Data.Maybe (fromJust, isJust)
 import Test.Framework ( defaultMain, testGroup, Test )
 import Test.Framework.Providers.HUnit
 import Test.Framework.Providers.QuickCheck2 (testProperty)
@@ -77,6 +78,7 @@ tests = [ testGroup "Tautologies" (casifyTests "taut" tautologyTests)
                                      ]
         , testGroup "Properties" [ testProperty "bddEq" prop_bddEq
                                  , testProperty "satValid" prop_satIsValid
+                                 , testProperty "satValidSelf" prop_satIsValidSelf
                                  ]
         ]
 
@@ -100,21 +102,12 @@ tautologyTests = [ testTautology "x[1] | !x[1]" -- Law of the excluded middle
     testTautology f = assertEqual f (mkBDD f) BDD.makeTrue
     big1 = "x[1] & x[2] & x[3] | !x[4] ^ x[5] & x[6] <-> x[7]"
 
--- replaceTests :: [Assertion]
--- replaceTests = [ testReplacement "(x[1] & x[2]) | (x[3] ^ x[4]) & (x[2] -> x[5])"
---                    [(3, 11), (1, 16)]
---                ]
---   where
---     testReplacement f rep = assertEqual f
---       where
---         bbd = mkBDD f
---         bdd' = replace bdd rep
-
+-- Simple contradiction test
 test_contra1 = assertEqual f (mkBDD f) BDD.makeFalse
   where f = "x[1] & !x[1]"
 
--- unsparsifyAssignment :: [(Int, Bool)]
-
+-- | Ensure that the satisfying assignment returned by anySat actually
+-- satisfies the formula (comparing against the formula interpreter).
 prop_satIsValid :: Formula -> Bool
 prop_satIsValid f = case sol of
   Just _ -> defTrue == True && defFalse == True
@@ -126,6 +119,15 @@ prop_satIsValid f = case sol of
     sol' = maybe (error $ show sol) id sol
     defTrue = interpretFormulaDefault True f sol'
     defFalse = interpretFormulaDefault False f sol'
+
+-- | Substituting in the solution returned by anySat should result in
+-- a tautology.
+prop_satIsValidSelf :: Formula -> Property
+prop_satIsValidSelf f =
+  isJust sol ==> BDD.restrictAll bdd (fromJust sol) == BDD.makeTrue
+  where
+    bdd = formulaToBDD f
+    sol = BDD.anySat bdd
 
 -- prop_simpleAssign :: (Formula, VariableAssignment) -> Bool
 -- prop_simpleAssign (f, VA assign) = x
@@ -141,6 +143,7 @@ prop_satIsValid f = case sol of
 --     bdd0 = formulaToBDD f
 --     bdd' = BDD.replace bdd0 repl
 
+-- | A BDD should always be equal to itself.
 prop_bddEq :: Formula -> Bool
 prop_bddEq f = bdd == bdd
   where
