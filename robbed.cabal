@@ -30,9 +30,11 @@ test-suite quant-tests
   main-is: QuantTests.hs
   hs-source-dirs: tests
   ghc-options: -Wall
-  build-depends: robbed,
+  build-depends: robbed, containers,
                  base > 3 && < 5,
                  boolean-formula-simple,
                  HUnit,
+                 QuickCheck > 2.4,
                  test-framework,
-                 test-framework-hunit
+                 test-framework-hunit,
+                 test-framework-quickcheck2
