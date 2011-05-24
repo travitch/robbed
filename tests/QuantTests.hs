@@ -1,6 +1,7 @@
-import Test.Framework ( defaultMain, testGroup )
+import Data.List (mapAccumL)
+import Test.Framework ( defaultMain, testGroup, Test )
 import Test.Framework.Providers.HUnit
-import Test.HUnit
+import Test.HUnit hiding (Test, test)
 
 import Data.Bool.SimpleFormula
 import Data.ROBDD.Strict (ROBDD)
@@ -24,21 +25,31 @@ mkBDD = (either (error . show) formulaToBDD) . parseString
 main :: IO ()
 main = defaultMain tests
 
--- tests :: [Test]
-tests = [ testGroup "Tautologies" [ testCase "taut1" test_taut1
-                                  , testCase "taut2" test_taut2
-                                  ]
+tests :: [Test]
+tests = [ testGroup "Tautologies" (casifyTests "taut" tautologyTests)
         , testGroup "Contradictions" [ testCase "contra1" test_contra1
                                      ]
         ]
 
-test_taut1 = assertEqual (f ++ " ?? x[1] / True") (BDD.restrict bdd 1 True) BDD.makeTrue
+casifyTests :: String -> [Assertion] -> [Test]
+casifyTests pfx = snd . (mapAccumL casify 0)
   where
-    f = "x[1] | x[2]"
-    bdd = mkBDD f
+    casify idx test = (idx + 1, testCase (pfx ++ show idx) test)
 
-test_taut2 = assertEqual f (mkBDD f) BDD.makeTrue
-  where f = "x[1] | !x[1]"
+-- Most of these are simple examples taken from Wikipedia
+tautologyTests :: [Assertion]
+tautologyTests = [ testTautology "x[1] | !x[1]" -- Law of the excluded middle
+                 , testTautology "x[1] -> x[1]"
+                 , testTautology "(x[1] -> x[2]) <-> (!x[2] -> !x[1])" -- Contrapositive
+                 , testTautology "((!x[1] -> x[2]) & (!x[1] -> !x[2])) -> x[1]" -- reductio ad absurdum
+                 , testTautology "!(x[1] & x[2]) <-> (!x[1] | !x[2])" -- de Morgan's Law
+                 , testTautology "((x[1] -> x[2]) & (x[2] -> x[3])) -> (x[1] -> x[3])" -- Syllogism
+                 , testTautology "((x[1] | x[2]) & (x[1] -> x[3]) & (x[2] -> x[3])) -> x[3]" -- Proof by cases
+                 , testTautology (concat ["(", big1, ") -> (", big1, ")"])
+                 ]
+  where
+    testTautology f = assertEqual f (mkBDD f) BDD.makeTrue
+    big1 = "x[1] & x[2] & x[3] | !x[4] ^ x[5] & x[6] <-> x[7]"
 
 test_contra1 = assertEqual f (mkBDD f) BDD.makeFalse
   where f = "x[1] & !x[1]"
