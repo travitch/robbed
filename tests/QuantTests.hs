@@ -90,6 +90,8 @@ tests = [ testGroup "Tautologies" (casifyTests "taut" tautologyTests)
         , testGroup "Contradictions" [ testCase "contra1" test_contra1
                                      ]
         , testGroup "Properties" [ testProperty "bddEq" prop_bddEq
+                                 , testProperty "deMorgan" prop_deMorgan
+                                 , testProperty "idempotentNegate" prop_bddNegIdemp
                                  , testProperty "satValid" prop_satIsValid
                                  , testProperty "satValidSelf" prop_satIsValidSelf
                                  , testProperty "resAndResAll" prop_restrictAndRestrictAllAgree
@@ -180,6 +182,16 @@ prop_existAndApplyExistAgree (f, VL vs) = exAll == exIncr
     exAll = BDD.applyExists const bdd bdd vs'
     exIncr = foldl' BDD.exist bdd vs'
 
+-- Not really sure what unique is supposed to do...
+-- prop_uniqueAndApplyUniqueAgree :: (Formula, VariableList) -> Bool
+-- prop_uniqueAndApplyUniqueAgree (f, VL vs) = exAll == exIncr
+--   where
+--     vs' = take 5 vs
+--     bdd = formulaToBDD f
+--     exAll = BDD.applyUnique const bdd bdd vs'
+--     exIncr = foldl' BDD.unique bdd vs'
+
+
 -- prop_simpleAssign :: (Formula, VariableAssignment) -> Bool
 -- prop_simpleAssign (f, VA assign) = x
 --   where
@@ -193,6 +205,18 @@ prop_existAndApplyExistAgree (f, VL vs) = exAll == exIncr
 --   where
 --     bdd0 = formulaToBDD f
 --     bdd' = BDD.replace bdd0 repl
+
+prop_deMorgan :: (Formula, Formula) -> Bool
+prop_deMorgan (f1, f2) =
+  BDD.neg (b1 `BDD.and` b2) == (BDD.neg b1) `BDD.or` (BDD.neg b2)
+  where
+    b1 = formulaToBDD f1
+    b2 = formulaToBDD f2
+
+prop_bddNegIdemp :: Formula -> Bool
+prop_bddNegIdemp f = bdd == BDD.neg (BDD.neg bdd)
+  where
+    bdd = formulaToBDD f
 
 -- | A BDD should always be equal to itself.
 prop_bddEq :: Formula -> Bool
