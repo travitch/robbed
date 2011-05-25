@@ -19,7 +19,7 @@ arbitraryFormula = sized formula
 formula ::  Int -> Gen Formula
 formula sz = formula' sz'
   where
-    sz' = max 20 sz
+    sz' = min 30 sz
     formula' 0 = Var <$> choose (0, sz')
     formula' n = oneof [ Var <$> choose (0, sz')
                        , Not <$> st
