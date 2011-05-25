@@ -53,7 +53,7 @@ makeFalse = ROBDD M.empty [] Zero
 -- will cause an error to be raised.
 makeVar :: Var -> ROBDD
 makeVar v
-  | v >= 0 = ROBDD M.empty [] bdd
+  | v >= 0 = ROBDD M.empty [0..] bdd
   | otherwise = error "Variable numbers must be >= 0"
   where
     bdd = BDD Zero v One 0 (hashNode v Zero One)
