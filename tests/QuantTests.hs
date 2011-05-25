@@ -1,5 +1,6 @@
 import Control.Applicative
 import Data.List (mapAccumL, foldl')
+import qualified Data.Map as M
 import Data.Maybe (fromJust, isJust)
 import Test.Framework ( defaultMain, testGroup, Test )
 import Test.Framework.Providers.HUnit
@@ -56,6 +57,16 @@ arbitraryVariableAssignment = sized va
   where
     va sz = VA <$> (vectorOf sz ((,) <$> choose (0, sz) <*> elements [True, False]))
 
+newtype VariableList = VL [Int]
+                     deriving (Show)
+instance Arbitrary VariableList where
+  arbitrary = arbitraryVariableList
+
+arbitraryVariableList :: Gen VariableList
+arbitraryVariableList = sized vl
+  where
+    vl sz = VL <$> vectorOf sz (choose (0, sz))
+
 binop :: (ROBDD -> ROBDD -> ROBDD) -> Formula -> Formula -> ROBDD
 binop op f1 f2 = (formulaToBDD f1) `op` (formulaToBDD f2)
 
@@ -82,6 +93,7 @@ tests = [ testGroup "Tautologies" (casifyTests "taut" tautologyTests)
                                  , testProperty "satValid" prop_satIsValid
                                  , testProperty "satValidSelf" prop_satIsValidSelf
                                  , testProperty "resAndResAll" prop_restrictAndRestrictAllAgree
+                                 , testProperty "existAndExistAll" prop_existAndApplyExistAgree
                                  ]
         ]
 
@@ -137,14 +149,25 @@ prop_satIsValidSelf f =
     sol = BDD.anySat bdd
 
 prop_restrictAndRestrictAllAgree :: (Formula, VariableAssignment) -> Bool
-prop_restrictAndRestrictAllAgree (f, (VA assign)) = resAll == resIncr
+prop_restrictAndRestrictAllAgree (f, VA assign) = resAll == resIncr
   where
-    assign' = take 3 assign
-    -- ^ Only take a few - this could be expensive
+    assign' = M.toList $ M.fromList $ take 5 assign
+    -- ^ Only take a few - this could be expensive.  Also uniquify
+    -- based on the keys (variables).  Duplicate entries with
+    -- different bool values can lead to false-positive errors due to
+    -- the way restrictAll manages its assignments.
     bdd = formulaToBDD f
     resAll = BDD.restrictAll bdd assign'
     resIncr = foldl' incrRestrict bdd assign'
     incrRestrict b (var, val) = BDD.restrict b var val
+
+prop_existAndApplyExistAgree :: (Formula, VariableList) -> Bool
+prop_existAndApplyExistAgree (f, VL vs) = exAll == exIncr
+  where
+    vs' = take 5 vs
+    bdd = formulaToBDD f
+    exAll = BDD.applyExists const bdd bdd vs'
+    exIncr = foldl' BDD.exist bdd vs'
 
 -- prop_simpleAssign :: (Formula, VariableAssignment) -> Bool
 -- prop_simpleAssign (f, VA assign) = x
