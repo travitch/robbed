@@ -1,5 +1,5 @@
 import Control.Applicative
-import Data.List (mapAccumL)
+import Data.List (mapAccumL, foldl')
 import Data.Maybe (fromJust, isJust)
 import Test.Framework ( defaultMain, testGroup, Test )
 import Test.Framework.Providers.HUnit
@@ -47,6 +47,7 @@ arbitraryReplaceMap = sized replaceMap
     replaceMap sz = RM <$> (vectorOf sz ((,) <$> choose (0, sz) <*> choose (0, sz)))
 
 newtype VariableAssignment = VA [(Int, Bool)]
+                           deriving (Show)
 instance Arbitrary VariableAssignment where
   arbitrary = arbitraryVariableAssignment
 
@@ -80,6 +81,7 @@ tests = [ testGroup "Tautologies" (casifyTests "taut" tautologyTests)
         , testGroup "Properties" [ testProperty "bddEq" prop_bddEq
                                  , testProperty "satValid" prop_satIsValid
                                  , testProperty "satValidSelf" prop_satIsValidSelf
+                                 , testProperty "resAndResAll" prop_restrictAndRestrictAllAgree
                                  ]
         ]
 
@@ -133,6 +135,16 @@ prop_satIsValidSelf f =
   where
     bdd = formulaToBDD f
     sol = BDD.anySat bdd
+
+prop_restrictAndRestrictAllAgree :: (Formula, VariableAssignment) -> Bool
+prop_restrictAndRestrictAllAgree (f, (VA assign)) = resAll == resIncr
+  where
+    assign' = take 3 assign
+    -- ^ Only take a few - this could be expensive
+    bdd = formulaToBDD f
+    resAll = BDD.restrictAll bdd assign'
+    resIncr = foldl' incrRestrict bdd assign'
+    incrRestrict b (var, val) = BDD.restrict b var val
 
 -- prop_simpleAssign :: (Formula, VariableAssignment) -> Bool
 -- prop_simpleAssign (f, VA assign) = x
