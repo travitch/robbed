@@ -40,11 +40,11 @@ type BinBoolFunc = Bool -> Bool -> Bool
 
 -- | Make the BDD representing True (One)
 makeTrue :: ROBDD
-makeTrue = ROBDD M.empty [] One
+makeTrue = ROBDD M.empty [0..] One
 
 -- | Make the BDD representing False (Zero)
 makeFalse :: ROBDD
-makeFalse = ROBDD M.empty [] Zero
+makeFalse = ROBDD M.empty [0..] Zero
 
 
 -- | Make a single BDD variable with the given number.  The number is
