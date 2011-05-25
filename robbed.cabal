@@ -29,7 +29,7 @@ test-suite quant-tests
   type: exitcode-stdio-1.0
   main-is: QuantTests.hs
   hs-source-dirs: tests
-  ghc-options: -Wall
+  ghc-options: -Wall -O -funbox-strict-fields
   build-depends: robbed, containers,
                  base > 3 && < 5,
                  boolean-formula-simple,
