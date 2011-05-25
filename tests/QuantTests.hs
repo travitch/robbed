@@ -94,6 +94,7 @@ tests = [ testGroup "Tautologies" (casifyTests "taut" tautologyTests)
                                  , testProperty "satValidSelf" prop_satIsValidSelf
                                  , testProperty "resAndResAll" prop_restrictAndRestrictAllAgree
                                  , testProperty "existAndExistAll" prop_existAndApplyExistAgree
+                                 , testProperty "restrictUnordered" prop_restrictUnordered
                                  ]
         ]
 
@@ -160,6 +161,16 @@ prop_restrictAndRestrictAllAgree (f, VA assign) = resAll == resIncr
     resAll = BDD.restrictAll bdd assign'
     resIncr = foldl' incrRestrict bdd assign'
     incrRestrict b (var, val) = BDD.restrict b var val
+
+prop_restrictUnordered :: (Formula, VariableAssignment) -> Bool
+prop_restrictUnordered (f, VA assign) = bdd1 == bdd2
+  where
+    assign' = M.toList $ M.fromList $ take 10 assign
+    assign1 = assign'
+    assign2 = reverse assign'
+    bdd = formulaToBDD f
+    bdd1 = BDD.restrictAll bdd assign1
+    bdd2 = BDD.restrictAll bdd assign2
 
 prop_existAndApplyExistAgree :: (Formula, VariableList) -> Bool
 prop_existAndApplyExistAgree (f, VL vs) = exAll == exIncr
