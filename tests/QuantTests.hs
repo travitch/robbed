@@ -17,10 +17,11 @@ arbitraryFormula :: Gen Formula
 arbitraryFormula = sized formula
 
 formula ::  Int -> Gen Formula
-formula sz = formula' sz
+formula sz = formula' sz'
   where
-    formula' 0 = Var <$> choose (0, sz)
-    formula' n = oneof [ Var <$> choose (0, sz)
+    sz' = max 20 sz
+    formula' 0 = Var <$> choose (0, sz')
+    formula' n = oneof [ Var <$> choose (0, sz')
                        , Not <$> st
                        , And <$> st <*> st
                        , Xor <$> st <*> st
@@ -103,15 +104,19 @@ tautologyTests = [ testTautology "x[1] | !x[1]" -- Law of the excluded middle
     big1 = "x[1] & x[2] & x[3] | !x[4] ^ x[5] & x[6] <-> x[7]"
 
 -- Simple contradiction test
+test_contra1 :: Assertion
 test_contra1 = assertEqual f (mkBDD f) BDD.makeFalse
   where f = "x[1] & !x[1]"
 
 -- | Ensure that the satisfying assignment returned by anySat actually
 -- satisfies the formula (comparing against the formula interpreter).
-prop_satIsValid :: Formula -> Bool
-prop_satIsValid f = case sol of
-  Just _ -> defTrue == True && defFalse == True
-  Nothing -> True
+-- This property interprets the formula twice - once with each default
+-- value.  This is because 'interpretFormula' requires all variables
+-- to have assignments but the satisfying solution from the BDD
+-- probably won't have all variables assigned.
+prop_satIsValid :: Formula -> Property
+prop_satIsValid f =
+  isJust sol ==> defTrue == True && defFalse == True
   where
     bdd = formulaToBDD f
     sol :: Maybe [(Int, Bool)]
