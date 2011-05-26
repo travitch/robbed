@@ -199,18 +199,24 @@ prop_existAndApplyExistAgree (f, VL vs) = exAll == exIncr
     exAll = BDD.applyExists const bdd bdd vs'
     exIncr = foldl' BDD.exist bdd vs'
 
+-- | The new names for variables need to be unique (e.g., [(1, 50),
+-- (5, 50)] is an error).  This function filters out invalid pairings.
+fixReplacementMap :: ReplaceMap -> [(Int, Int)]
+fixReplacementMap (RM repl) =
+  zip (S.toList $ S.fromList srcs) (S.toList $ S.fromList dsts)
+  where
+    (srcs, dsts) = unzip repl
+
 -- | Ensure replace actually works by replacing some variables and
 -- performing an equivalent variable restriction on the replaced
 -- variables.  This is a partial test.
 prop_replaceEquiv :: (Formula, ReplaceMap, [Bool]) -> Property
-prop_replaceEquiv (f, RM repl, assignVals) =
-  (length assignVals >= length repl) ==>
+prop_replaceEquiv (f, repl, assignVals) =
+  (length assignVals >= length repl') ==>
   collect (length repl') $
   BDD.restrictAll bdd origAssign == BDD.restrictAll bdd' renamedAssign
   where
-    repl' =
-      let (srcs, dsts) = unzip repl
-      in zip (S.toList $ S.fromList srcs) (S.toList $ S.fromList dsts)
+    repl' = fixReplacementMap repl
     (origVars, newVars) = unzip repl'
     origAssign = zip origVars assignVals
     renamedAssign = zip newVars assignVals
