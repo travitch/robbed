@@ -1,6 +1,7 @@
 import Control.Applicative
 import Data.List (mapAccumL, foldl')
 import qualified Data.Map as M
+import qualified Data.Set as S
 import Data.Maybe (fromJust, isJust)
 import Test.Framework ( defaultMain, testGroup, Test )
 import Test.Framework.Providers.HUnit
@@ -17,10 +18,13 @@ import qualified Data.ROBDD.Strict as BDD
 arbitraryFormula :: Gen Formula
 arbitraryFormula = sized formula
 
+maxVars :: Int
+maxVars = 30
+
 formula ::  Int -> Gen Formula
 formula sz = formula' sz'
   where
-    sz' = min 30 sz
+    sz' = min maxVars sz
     formula' 0 = Var <$> choose (0, sz')
     formula' n = oneof [ Var <$> choose (0, sz')
                        , Not <$> st
@@ -38,6 +42,7 @@ instance Arbitrary Formula where
 
 
 newtype ReplaceMap = RM [(Int, Int)]
+                   deriving (Show)
 instance Arbitrary ReplaceMap where
   arbitrary = arbitraryReplaceMap
 
@@ -45,7 +50,11 @@ arbitraryReplaceMap :: Gen ReplaceMap
 arbitraryReplaceMap = sized replaceMap
   where
     replaceMap :: Int -> Gen ReplaceMap
-    replaceMap sz = RM <$> (vectorOf sz ((,) <$> choose (0, sz) <*> choose (0, sz)))
+    replaceMap sz =
+      let sz' = min sz maxVars
+          newNameGen = choose (maxVars + 200, maxVars + 200 + sz')
+          initNameGen = choose (0, sz')
+      in RM <$> vectorOf sz' ((,) <$> initNameGen <*> newNameGen)
 
 newtype VariableAssignment = VA [(Int, Bool)]
                            deriving (Show)
@@ -97,6 +106,7 @@ tests = [ testGroup "Tautologies" (casifyTests "taut" tautologyTests)
                                  , testProperty "resAndResAll" prop_restrictAndRestrictAllAgree
                                  , testProperty "existAndExistAll" prop_existAndApplyExistAgree
                                  , testProperty "restrictUnordered" prop_restrictUnordered
+                                 , testProperty "renameEquiv" prop_replaceEquiv
                                  ]
         ]
 
@@ -151,6 +161,8 @@ prop_satIsValidSelf f =
     bdd = formulaToBDD f
     sol = BDD.anySat bdd
 
+-- | Ensure that restrictAll and repeated applications of restrict
+-- agree and produce the same result.
 prop_restrictAndRestrictAllAgree :: (Formula, VariableAssignment) -> Bool
 prop_restrictAndRestrictAllAgree (f, VA assign) = resAll == resIncr
   where
@@ -164,6 +176,8 @@ prop_restrictAndRestrictAllAgree (f, VA assign) = resAll == resIncr
     resIncr = foldl' incrRestrict bdd assign'
     incrRestrict b (var, val) = BDD.restrict b var val
 
+-- | Ensure that the order of variable restriction does not affect
+-- results.
 prop_restrictUnordered :: (Formula, VariableAssignment) -> Bool
 prop_restrictUnordered (f, VA assign) = bdd1 == bdd2
   where
@@ -174,6 +188,9 @@ prop_restrictUnordered (f, VA assign) = bdd1 == bdd2
     bdd1 = BDD.restrictAll bdd assign1
     bdd2 = BDD.restrictAll bdd assign2
 
+-- | Compare the results of applyExists (to existentially quantify a
+-- set of variables) to the result obtained by repeated applications
+-- of the simpler exist function.  They should agree.
 prop_existAndApplyExistAgree :: (Formula, VariableList) -> Bool
 prop_existAndApplyExistAgree (f, VL vs) = exAll == exIncr
   where
@@ -182,30 +199,25 @@ prop_existAndApplyExistAgree (f, VL vs) = exAll == exIncr
     exAll = BDD.applyExists const bdd bdd vs'
     exIncr = foldl' BDD.exist bdd vs'
 
--- Not really sure what unique is supposed to do...
--- prop_uniqueAndApplyUniqueAgree :: (Formula, VariableList) -> Bool
--- prop_uniqueAndApplyUniqueAgree (f, VL vs) = exAll == exIncr
---   where
---     vs' = take 5 vs
---     bdd = formulaToBDD f
---     exAll = BDD.applyUnique const bdd bdd vs'
---     exIncr = foldl' BDD.unique bdd vs'
+-- | Ensure replace actually works by replacing some variables and
+-- performing an equivalent variable restriction on the replaced
+-- variables.  This is a partial test.
+prop_replaceEquiv :: (Formula, ReplaceMap, [Bool]) -> Property
+prop_replaceEquiv (f, RM repl, assignVals) =
+  (length assignVals >= length repl) ==>
+  collect (length repl') $
+  BDD.restrictAll bdd origAssign == BDD.restrictAll bdd' renamedAssign
+  where
+    repl' =
+      let (srcs, dsts) = unzip repl
+      in zip (S.toList $ S.fromList srcs) (S.toList $ S.fromList dsts)
+    (origVars, newVars) = unzip repl'
+    origAssign = zip origVars assignVals
+    renamedAssign = zip newVars assignVals
+    bdd = formulaToBDD f
+    bdd' = BDD.replace bdd repl'
 
-
--- prop_simpleAssign :: (Formula, VariableAssignment) -> Bool
--- prop_simpleAssign (f, VA assign) = x
---   where
---     bdd = formulaToBDD f
---     val = BDD.restrictAll bdd assign
---     defTrue = interpretFormulaDefault True f assign
---     defFalse = interpretFormulaDefault False f assign
-
--- prop_replaceEquiv :: (Formula, ReplaceMap) -> Bool
--- prop_replaceEquiv (f, RM repl) = undefined
---   where
---     bdd0 = formulaToBDD f
---     bdd' = BDD.replace bdd0 repl
-
+-- | Test to ensure deMorgan's law always holds.
 prop_deMorgan :: (Formula, Formula) -> Bool
 prop_deMorgan (f1, f2) =
   BDD.neg (b1 `BDD.and` b2) == (BDD.neg b1) `BDD.or` (BDD.neg b2)
@@ -213,6 +225,7 @@ prop_deMorgan (f1, f2) =
     b1 = formulaToBDD f1
     b2 = formulaToBDD f2
 
+-- | Double negation should be a no-op
 prop_bddNegIdemp :: Formula -> Bool
 prop_bddNegIdemp f = bdd == BDD.neg (BDD.neg bdd)
   where
