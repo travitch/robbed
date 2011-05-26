@@ -287,7 +287,7 @@ replace (ROBDD revMap idSrc bdd) mapping =
       | level `varBddCmp` low == LT && level `varBddCmp` high == LT =
         {-memoize uid-} (mk level low high)
       | level `varBddCmp` low == EQ || level `varBddCmp` high == EQ =
-          error "Bad replace?"
+          error ("Bad replace? " ++ show mapping)
       | otherwise = {-memoize uid $-} do
         case low `bddCmp` high of
           EQ -> do
