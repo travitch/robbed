@@ -9,6 +9,7 @@ module Data.ROBDD.Strict ( ROBDD
                          , anySat
                          , satCount
                          , allSat
+                         , allSat'
                          , makeVar
                          , makeTrue
                          , makeFalse
@@ -27,6 +28,7 @@ module Data.ROBDD.Strict ( ROBDD
 
 import Prelude hiding (and, or)
 import Data.Foldable (toList)
+import Data.List (sort)
 import qualified Data.HashMap.Strict as M
 import qualified Data.HashSet as S
 import Data.Hashable
@@ -373,6 +375,50 @@ allSat (ROBDD _ _ bdd) =
       let l' = fmap ((v,False):) l
           r' = fmap ((v,True):) r
       return (l' >< r')
+
+-- | Extract all satisfying solutions to the BDD, but also ensuring
+-- that assignments are provided for all of the @activeVars@.  A
+-- normal 'allSat' only provides assignments for variables appearing
+-- in the BDD (i.e. the variables whose values are not arbitrary).
+-- Some applications also need assignments for the arbitrary
+-- variables, but the allSat algorithm cannot know which variables to
+-- include without the activeVars parameter.
+allSat' :: ROBDD -> [Int] -> [[(Var, Bool)]]
+allSat' (ROBDD _ _ Zero) _ = []
+allSat' (ROBDD _ _ bdd) activeVars =
+  toList $ fst $ runBDDContext (sat' bdd vars) emptyBDDState
+  where
+    vars = sort activeVars
+    sat' Zero _ = return Seq.empty
+    sat' One _ = return $ Seq.singleton []
+    sat' (BDD low v high uid _) vs = memoize uid $ do
+      let (lLocalVars, lLowerVars) = arbitraryVars vs v low
+          (rLocalVars, rLowerVars) = arbitraryVars vs v high
+      -- ^ The localVars are those that can be arbitrary on their
+      -- respective branches.
+      l <- sat' low lLowerVars
+      r <- sat' high rLowerVars
+      -- ^ Computed the satisfying assignments for child trees - add in
+      -- corrections to each branch before adding the assignment for
+      -- this variable
+      let l' = addArbitrary lLocalVars l
+          r' = addArbitrary rLocalVars r
+          l'' = fmap ((v, False):) l'
+          r'' = fmap ((v, True):) r'
+      return (l'' >< r'')
+    arbitraryVars vs v Zero = (filter (/=v) vs, [])
+    arbitraryVars vs v One = (filter (/=v) vs, [])
+    arbitraryVars vs vLocal (BDD _ vNext _ _ _) =
+      let (local, lower) = span (<vNext) vs
+      in (filter (/=vLocal) local, lower)
+    addArbitrary [] subsols = subsols
+    addArbitrary (v:vs) subsols =
+      let s' = addArbitrary vs subsols
+          l = fmap ((v, False):) s'
+          r = fmap ((v, True):) s'
+          -- ^ This value can be arbitrary, so add solutions for both
+          -- possible truth assignments.
+      in l >< r
 
 -- TODO: compose
 
