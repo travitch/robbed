@@ -107,6 +107,8 @@ tests = [ testGroup "Tautologies" (casifyTests "taut" tautologyTests)
                                  , testProperty "existAndExistAll" prop_existAndApplyExistAgree
                                  , testProperty "restrictUnordered" prop_restrictUnordered
                                  , testProperty "renameEquiv" prop_replaceEquiv
+                                 , testProperty "allSatValid" prop_allSatValid
+                                 , testProperty "allSat'Valid" prop_allSatPrimeValid
                                  ]
         ]
 
@@ -242,3 +244,18 @@ prop_bddEq :: Formula -> Bool
 prop_bddEq f = bdd == bdd
   where
     bdd = formulaToBDD f
+
+-- | Ensure that all satisfying solutions generated are really
+-- satisfying solutions.
+prop_allSatValid :: Formula -> Bool
+prop_allSatValid f = all (==BDD.makeTrue) $ map (BDD.restrictAll bdd) sols
+  where
+    bdd = formulaToBDD f
+    sols = BDD.allSat bdd
+
+prop_allSatPrimeValid :: Formula -> Bool
+prop_allSatPrimeValid f = validAssignments
+  where
+    validAssignments = all (==BDD.makeTrue) $ map (BDD.restrictAll bdd) sols
+    bdd = formulaToBDD f
+    sols = BDD.allSat' bdd [(maxVars+2)..(maxVars+10)]
