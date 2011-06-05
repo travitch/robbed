@@ -5,7 +5,11 @@ import Data.ROBDD.Strict.Types
 
 viewDAG :: DAG -> IO ()
 viewDAG dag = do
-  let dg = graphToDot nonClusteredParams dag
+  let params = nonClusteredParams { fmtNode = \(_,l) -> [toLabel l]
+                                  , fmtEdge = \(_,_,l) -> [toLabel l]
+                                  }
+      dg = graphToDot params dag
   s <- prettyPrint dg
   putStrLn s
-  preview dag
+  _ <- runGraphvizCanvas' dg Gtk
+  return ()
