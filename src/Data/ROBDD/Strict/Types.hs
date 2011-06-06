@@ -63,6 +63,11 @@ data BDD = BDD BDD !Var BDD !NodeId !Int
          | Zero
          | One
 
+instance Show BDD where
+  show Zero = "Zero"
+  show One = "One"
+  show (BDD _ v _ _ _) = show v
+
 -- | This is the public wrapper around BDDs.  It maintains some
 -- metadata required to manipulate a BDD correctly.
 data ROBDD = ROBDD RevMap [Int] BDD
