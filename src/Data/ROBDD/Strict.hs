@@ -258,7 +258,10 @@ restrictAll (ROBDD revMap idSrc bdd) vals =
           mk var low' high'
 
 -- | Rename BDD variables according to the @mapping@ provided as an
--- alist.  This can be a potentially very expensive operation.
+-- alist.  This can be a potentially very expensive operation.  Note:
+-- This function can throw an exception; this is ugly and I intend to
+-- convert the return type to Maybe ROBDD once I figure out how to
+-- determine that a rename will be 'bad'.
 replace :: ROBDD -> [(Var, Var)] -> ROBDD
 replace (ROBDD revMap idSrc bdd) mapping =
   let (r, s) = runBDDContext (replace' bdd) emptyBDDState { bddIdSource = idSrc
@@ -289,7 +292,7 @@ replace (ROBDD revMap idSrc bdd) mapping =
       | level `varBddCmp` low == LT && level `varBddCmp` high == LT =
         {-memoize uid-} (mk level low high)
       | level `varBddCmp` low == EQ || level `varBddCmp` high == EQ =
-          error ("Bad replace at " ++ show level ++ ": " ++ show mapping)
+          error ("Bad replace at " ++ show level ++ "(fixing " ++ show low ++ " and " ++ show high ++ " : " ++ show mapping)
       | otherwise = {-memoize uid $-} do
         case low `bddCmp` high of
           EQ -> do
