@@ -53,6 +53,10 @@
 -- This package really needs GHC's @-funbox-strict-fields@ flag (set
 -- in the cabal file) to have reasonable memory usage.
 --
+-- This API is still unstable and subject to change.  In particular,
+-- some operations could use better names and 'replace' should return
+-- @Maybe ROBDD@ when a rename fails.
+--
 -- == Examples ==
 --
 -- deMorgan's Law !(x[1] OR x[2]) == !x[1] AND !x[2]
@@ -368,13 +372,18 @@ restrictAll (ROBDD revMap idSrc bdd) vals =
           mk var low' high'
 
 -- | Rename BDD variables according to the @mapping@ provided as an
--- alist.  This can be a very expensive operation.
+-- alist.  This can be a very expensive operation.  The renames occur
+-- simultaneously (I think), so swapping two variables should work
+-- without intermediate steps.
 --
 -- Note:
 --
 -- This function can throw an exception; this is ugly and I intend to
 -- convert the return type to Maybe ROBDD once I figure out how to
 -- determine that a rename will be 'bad'.
+--
+-- I think renames fail when a variable is renamed to a position that
+-- is already occupied, but I'm not quite sure about that.
 replace :: ROBDD -> [(Var, Var)] -> ROBDD
 replace (ROBDD revMap idSrc bdd) mapping =
   let (r, s) = runBDDContext (replace' bdd) emptyBDDState { bddIdSource = idSrc

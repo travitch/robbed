@@ -4,6 +4,7 @@ more details.
 
 == TODO ==
 
+ * Better names for some functions
  * Optimize
  * Implement the compose operation
  * Implement constant-time negation
