@@ -1,6 +1,6 @@
 name: robbed
 version: 0.1.0
-synopsis: A reduced ordered BDD package
+synopsis: A reduced ordered binary decision diagram package
 license: BSD3
 license-file: LICENSE
 author: Tristan Ravitch
@@ -9,9 +9,13 @@ category: Data
 build-type: Simple
 cabal-version: >=1.10
 stability: experimental
+extra-source-files: README.md
 
--- description:
--- extra-source-files:
+description: This package implements reduced ordered binary decision
+             diagrams (ROBDDs) in pure Haskell.  The main
+             documentation is in Data.ROBDD.  This implementation
+             performs well up to about 70 variables per formula,
+             depending on the resulting structure.
 
 library
   default-language: Haskell2010

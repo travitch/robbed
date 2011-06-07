@@ -52,6 +52,16 @@
 --
 -- This package really needs GHC's @-funbox-strict-fields@ flag (set
 -- in the cabal file) to have reasonable memory usage.
+--
+-- == Examples ==
+--
+-- deMorgan's Law !(x[1] OR x[2]) == !x[1] AND !x[2]
+--
+-- >>> let left = neg (makeVar 1 `or` makeVar 2)
+-- >>> let right = neg (makeVar 1) `and` neg (makeVar 2)
+--
+-- >>> right == left
+-- > True
 
 module Data.ROBDD (
   -- * Types
