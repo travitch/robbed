@@ -1,4 +1,4 @@
-{-# OPTIONS_HADDOCK not_home #-}
+{-# OPTIONS_HADDOCK not-home #-}
 {-# LANGUAGE NoMonomorphismRestriction, RankNTypes #-}
 module Data.ROBDD.Types ( BDD(..)
                         , ROBDD(..)

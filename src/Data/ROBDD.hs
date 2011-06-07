@@ -50,8 +50,8 @@
 --
 -- == Notes ==
 --
--- This package really needs GHC's -funbox-strict-fields flag (set in the
--- cabal file) to have reasonable memory usage.
+-- This package really needs GHC's @-funbox-strict-fields@ flag (set
+-- in the cabal file) to have reasonable memory usage.
 
 module Data.ROBDD (
   -- * Types
@@ -64,7 +64,8 @@ module Data.ROBDD (
 
   -- * Operations
 
-  -- | These functions manipulate BDDs.
+  -- | These functions manipulate BDDs.  All of the normal binary
+  -- operators have the same complexity as apply.
   apply,
   applyExists,
   applyForAll,
@@ -120,6 +121,9 @@ makeFalse = ROBDD M.empty [0..] Zero
 -- used to identify the variable in other functions (like
 -- quantification).  The number must be non-negative; negative numbers
 -- will cause an error to be raised.
+--
+-- The resulting BDD has a single variable (with the number provided)
+-- and edges to Zero and One.
 makeVar :: Var -> ROBDD
 makeVar v
   | v >= 0 = ROBDD M.empty [0..] bdd
@@ -155,20 +159,33 @@ nand = apply boolNotAnd
 nor :: ROBDD -> ROBDD -> ROBDD
 nor = apply boolNotOr
 
--- | Existentially quantify a single variable from a BDD
+-- | Existentially quantify a single variable from a BDD.
+--
+-- >  exist b 10
+--
+-- creates a new BDD based on @b@ where the value of variable 10 is
+-- valid for an arbitrary assignment.  Equivalent to:
+--
+-- > b[10/True] `or` b[10/False]
+--
+-- (where 10/True means that True is substituted in for variable to).
 exist :: ROBDD -> Var -> ROBDD
 exist bdd var = or (restrict bdd var True) (restrict bdd var False)
 
--- | Uniquely quantify a single variable from a BDD.
+-- | Uniquely quantify a single variable from a BDD.  This is similar to
+-- 'exist', except the decomposed BDDs are combined with ``xor``.
 unique :: ROBDD -> Var -> ROBDD
 unique bdd var = xor (restrict bdd var True) (restrict bdd var False)
 
--- | forAll quantify the given variable
+-- | forAll quantify the given variable.  This is similar to 'exist',
+-- except the decomposed BDDs are combined with ``and``.
 forAll :: ROBDD -> Var -> ROBDD
 forAll bdd var = and (restrict bdd var True) (restrict bdd var False)
 
 -- | Construct a new BDD by applying the provided binary operator
--- to the two input BDDs
+-- to the two input BDDs.
+--
+-- O(|v_1||v_2|)
 apply :: (Bool -> Bool -> Bool) -> ROBDD -> ROBDD -> ROBDD
 apply op (ROBDD _ _ bdd1) (ROBDD _ _ bdd2) =
   let (bdd, s) = runBDDContext (applyInner op stdCtxt bdd1 bdd2) emptyBDDState
@@ -285,7 +302,14 @@ applyUnique = genericApply boolXor
 applyForAll :: (Bool -> Bool -> Bool) -> ROBDD -> ROBDD -> [Var] -> ROBDD
 applyForAll = genericApply (&&)
 
--- | Fix the value of a variable in the formula
+-- | Fix the value of a variable in the formula.
+--
+-- >   restrict b 10 True
+--
+-- Creates a new BDD based on @b@ where variable 10 is replaced by
+-- True.
+--
+-- O(|v|)
 restrict :: ROBDD -> Var -> Bool -> ROBDD
 restrict bdd@(ROBDD _ _ Zero) _ _ = bdd
 restrict bdd@(ROBDD _ _ One) _ _ = bdd
@@ -308,8 +332,9 @@ restrict (ROBDD revMap idSrc bdd) v b =
           True -> restrict' high
           False -> restrict' low
 
--- | restrict over a list of variable/value assignments.  This is more
--- efficient than repeated calls to restrict.
+-- | This is a variant of 'restrict' over a list of variable/value
+-- assignments.  It is more efficient than repeated calls to
+-- 'restrict'.
 restrictAll :: ROBDD -> [(Var, Bool)] -> ROBDD
 restrictAll bdd@(ROBDD _ _ Zero) _ = bdd
 restrictAll bdd@(ROBDD _ _ One) _ = bdd
@@ -333,7 +358,7 @@ restrictAll (ROBDD revMap idSrc bdd) vals =
           mk var low' high'
 
 -- | Rename BDD variables according to the @mapping@ provided as an
--- alist.  This can be a potentially very expensive operation.
+-- alist.  This can be a very expensive operation.
 --
 -- Note:
 --
@@ -388,9 +413,11 @@ replace (ROBDD revMap idSrc bdd) mapping =
 
 
 -- | negate the given BDD.  This implementation is somewhat more
--- efficient than the naiive translation to @BDD `impl` False@.
+-- efficient than the naiive translation to @BDD ``impl`` False@.
 -- Unfortunately, it isn't as much of an improvement as it could be
 -- via destructive updates.
+--
+-- O(|v|)
 neg :: ROBDD -> ROBDD
 neg (ROBDD _ _ bdd) =
   -- Everything gets re-allocated so don't bother trying to re-use the
@@ -408,7 +435,8 @@ neg (ROBDD _ _ bdd) =
 -- structure
 
 -- | Count the number of satisfying assignments to the BDD.
--- O(|v|)
+--
+-- O(|v|) where @v@ is the number of vertices in the BDD.
 satCount :: ROBDD -> Int
 satCount (ROBDD revMap _ bdd) =
   fst $ runBDDContext (count' bdd) emptyBDDState
@@ -428,7 +456,9 @@ satCount (ROBDD revMap _ bdd) =
       return (lc*l + hc*r)
 
 -- | Return an arbitrary assignment of values to variables to make the
--- formula true
+-- formula true.
+--
+-- O(|v|) where @v@ is the number of vertices in the BDD.
 anySat :: ROBDD -> Maybe [(Var, Bool)]
 anySat (ROBDD _ _ Zero) = Nothing
 anySat (ROBDD _ _ One) = Just []
@@ -442,7 +472,9 @@ anySat (ROBDD _ _ bdd) = Just $ sat' bdd []
         _ -> (v, False) : sat' low acc
 
 -- | Extract all satisfying variable assignments to the BDD as a list of
--- association lists.  O(2^n)
+-- association lists.
+--
+-- O(2^n)
 allSat :: ROBDD -> [[(Var, Bool)]]
 allSat (ROBDD _ _ Zero) = []
 allSat (ROBDD _ _ One) = [[]]
@@ -465,6 +497,8 @@ allSat (ROBDD _ _ bdd) =
 -- Some applications also need assignments for the arbitrary
 -- variables, but the allSat algorithm cannot know which variables to
 -- include without the activeVars parameter.
+--
+-- O(2^n)
 allSat' :: ROBDD -> [Int] -> [[(Var, Bool)]]
 allSat' (ROBDD _ _ Zero) _ = []
 allSat' (ROBDD _ _ bdd) activeVars =
@@ -504,7 +538,7 @@ allSat' (ROBDD _ _ bdd) activeVars =
 
 -- TODO: compose
 
--- The MK operation.  Re-use an existing BDD node if possible.
+-- | The MK operation.  Re-use an existing BDD node if possible.
 -- Otherwise create a new node with the provided NodeId, updating the
 -- tables.  This is not exported and just used internally.  It lives
 -- in the BDDContext monad, which holds the result cache (revLookup
@@ -523,16 +557,18 @@ mk v low high = do
       -- Make a new node
       Nothing -> revInsert v low high
 
--- Helpers for mk
+-- | Helpers for mk
 revLookup :: Var -> BDD -> BDD -> RevMap -> Maybe BDD
 revLookup v leftTarget rightTarget =
   M.lookup (v, nodeUID leftTarget, nodeUID rightTarget)
 
+-- | Compute the structural hash of a BDD node.  The structural hash
+-- uses the variable number and the hashes of the children.
 hashNode :: Var -> BDD -> BDD -> Int
 hashNode v low high =
   v `combine` nodeHash low `combine` nodeHash high
 
--- Create a new node for v with the given high and low edges.
+-- | Create a new node for v with the given high and low edges.
 -- Insert it into the revMap and return it.
 revInsert :: Var -> BDD -> BDD -> BDDContext a BDD BDD
 revInsert v lowTarget highTarget = do
@@ -550,7 +586,7 @@ revInsert v lowTarget highTarget = do
 
 
 
--- Evaluation contexts are tags used in the memoization table to
+-- | Evaluation contexts are tags used in the memoization table to
 -- differentiate memo entries from different contexts.  This is
 -- important for the genericApply function, which has a set of
 -- memoized values for its arguments.  It recursively calls the normal
@@ -558,9 +594,12 @@ revInsert v lowTarget highTarget = do
 -- (otherwise you get incorrect results).
 type EvaluationContext = Int
 
+-- | Context for top-level operations
 stdCtxt :: EvaluationContext
 stdCtxt = 1
 
+-- | A separate context (used as a key to caches) for inner
+-- evaluations.  This is specifically for the fancy apply operations.
 innerCtxt :: EvaluationContext
 innerCtxt = 2
 
