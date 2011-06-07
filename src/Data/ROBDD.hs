@@ -103,7 +103,7 @@ module Data.ROBDD (
   forAll,
   unique,
 
-  -- * Solutions
+  -- * Extracting Solutions
 
   -- | These functions extract satisfying solutions (or information
   -- about them) from a BDD.
