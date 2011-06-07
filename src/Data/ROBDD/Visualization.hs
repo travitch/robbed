@@ -1,7 +1,7 @@
-module Data.ROBDD.Strict.Visualization ( viewDAG, makeDAG ) where
+module Data.ROBDD.Visualization ( viewDAG, makeDAG ) where
 
 import Data.GraphViz
-import Data.ROBDD.Strict.Types
+import Data.ROBDD.Types
 
 viewDAG :: DAG -> IO ()
 viewDAG dag = do

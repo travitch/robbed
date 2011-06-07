@@ -1,27 +1,27 @@
 {-# LANGUAGE NoMonomorphismRestriction, RankNTypes #-}
-module Data.ROBDD.Strict.Types ( BDD(..)
-                               , ROBDD(..)
-                               , NodeId
-                               , Var
-                               , RevMap
-                               , Map
-                               , DAG
-                               , makeDAG
-                               , bddCmp
-                               , varBddCmp
-                               , highEdge
-                               , lowEdge
-                               , nodeVar
-                               , nodeUID
-                               , nodeHash
-                               , emptyBDDState
-                               , BDDContext
-                               , BDDState(..)
-                               , memoize
-                               , runBDDContext
-                               , getBDDState
-                               , putBDDState
-                               ) where
+module Data.ROBDD.Types ( BDD(..)
+                        , ROBDD(..)
+                        , NodeId
+                        , Var
+                        , RevMap
+                        , Map
+                        , DAG
+                        , makeDAG
+                        , bddCmp
+                        , varBddCmp
+                        , highEdge
+                        , lowEdge
+                        , nodeVar
+                        , nodeUID
+                        , nodeHash
+                        , emptyBDDState
+                        , BDDContext
+                        , BDDState(..)
+                        , memoize
+                        , runBDDContext
+                        , getBDDState
+                        , putBDDState
+                        ) where
 
 import Control.Monad.State
 import Data.GraphViz

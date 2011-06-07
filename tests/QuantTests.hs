@@ -1,17 +1,17 @@
 import Control.Applicative
-import Data.List (mapAccumL, foldl')
+import Data.List ( mapAccumL, foldl' )
 import qualified Data.Map as M
 import qualified Data.Set as S
-import Data.Maybe (fromJust, isJust)
+import Data.Maybe ( fromJust, isJust )
 import Test.Framework ( defaultMain, testGroup, Test )
 import Test.Framework.Providers.HUnit
-import Test.Framework.Providers.QuickCheck2 (testProperty)
-import Test.HUnit hiding (Test, test)
+import Test.Framework.Providers.QuickCheck2 ( testProperty )
+import Test.HUnit hiding ( Test, test )
 import Test.QuickCheck
 
 import Data.Bool.SimpleFormula
-import Data.ROBDD.Strict (ROBDD)
-import qualified Data.ROBDD.Strict as BDD
+import Data.ROBDD (ROBDD)
+import qualified Data.ROBDD as BDD
 
 -- The subtree is a monadic value and not a shared value - different
 -- subtrees are produced.
