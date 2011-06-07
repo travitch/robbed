@@ -31,10 +31,18 @@ import qualified Data.HashMap.Strict as M
 import Data.Hashable
 import Data.Graph.Inductive (Gr, mkGraph)
 
+-- | The finite Map type used in this module.  This is abstracted here
+-- so that it can be easily changed later.
 type Map = HashMap
 
+-- | This is one of the most important structures: the unique table
+-- that memoizes 'mk', ensuring the unique and canonical properties of
+-- BDDs.
 type RevMap = Map (Var, NodeId, NodeId) BDD
 
+-- | A type for unique identifiers of BDD nodes (these are independent
+-- of variable numbers).  The NodeId is only unique *within* a given
+-- BDD.
 type NodeId = Int
 
 -- | The type of BDD variables.
@@ -72,7 +80,8 @@ instance Show BDD where
   show (BDD _ v _ _ _) = show v
 
 -- | This is the public wrapper around BDDs.  It maintains some
--- metadata required to manipulate a BDD correctly.
+-- metadata required to manipulate a BDD correctly and does not expose
+-- the internal representation.
 data ROBDD = ROBDD RevMap [Int] BDD
 
 instance Show ROBDD where
@@ -97,8 +106,9 @@ instance Labellable BDD where
   toLabel (BDD _ v _ _ _) = toLabel $ show v
 
 
--- This is not an Ord instance because the EQ it returns is not the same
--- as the Eq typeclass - it is variable based instead of identity based
+-- | This is not an 'Ord' instance because the EQ it returns is not the
+-- same as the 'Eq' typeclass - it is variable based instead of identity
+-- based
 bddCmp :: BDD -> BDD -> Ordering
 Zero `bddCmp` Zero = EQ
 One `bddCmp` One = EQ
@@ -110,28 +120,38 @@ Zero `bddCmp` (BDD _ _ _ _ _) = GT
 One `bddCmp` (BDD _ _ _ _ _) = GT
 (BDD _ v1 _ _ _) `bddCmp` (BDD _ v2 _ _ _) = v1 `compare` v2
 
+-- | This is a variant of 'bddCmp' that compares variables.
 varBddCmp :: Var -> BDD -> Ordering
 varBddCmp _ Zero = LT
 varBddCmp _ One = LT
 varBddCmp v (BDD _ b _ _ _) = v `compare` b
 
+-- | Access the high (True) edge of a BDD; this will throw an error if
+-- applied to Zero or One.
 highEdge :: BDD -> BDD
 highEdge (BDD _ _ h _ _) = h
 highEdge _ = error "No high edge in Zero or One"
 
+-- | Access the low (False) edge of a BDD; this will throw an error if
+-- applied to Zero or One.
 lowEdge :: BDD -> BDD
 lowEdge (BDD l _ _ _ _) = l
 lowEdge _ = error "No low edge in Zero or One"
 
+-- | Get the variable number of a BDD; this will throw an error if
+-- applied to Zero or One.
 nodeVar :: BDD -> Var
 nodeVar (BDD _ v _ _ _) = v
 nodeVar _ = error "No variable for Zero or One"
 
+-- | Return the unique ID of a BDD node.
 nodeUID :: BDD -> Int
 nodeUID Zero = -1
 nodeUID One = -2
 nodeUID (BDD _ _ _ uid _) = uid
 
+-- | Return the hash of the given BDD.  The hash values of Zero and
+-- One are chosen arbitrarily (but are consistent).
 nodeHash :: BDD -> Int
 nodeHash Zero = 678
 nodeHash One = 345
@@ -192,24 +212,25 @@ bddEq b1 b2 =
             return (l && r)
     bddEq' _ _ = return False
 
--- Types used internally; these are for a State monad that tracks memo
--- tables and revmap updates.
+-- | Types used internally; these are for a State monad that tracks
+-- memo tables and revmap updates.
 data BDDState a b = BDDState { bddRevMap :: RevMap
                              , bddIdSource :: [Int]
                              , bddMemoTable :: Map a b
                              }
 
--- Start IDs at 2, since Zero and One are conceptually taken
+-- | The empty BDD state.
 emptyBDDState :: (Eq a, Hashable a) => BDDState a b
 emptyBDDState = BDDState { bddRevMap = M.empty
                          , bddIdSource = [0..]
                          , bddMemoTable = M.empty
                          }
 
+-- | A synonym for the common BDD State monad.
 type BDDContext a b c = State (BDDState a b) c
 
 
--- A helper to memoize BDD nodes
+-- | A helper to memoize BDD nodes
 memoNode :: (Eq a, Ord a, Hashable a) => a -> b -> BDDContext a b ()
 memoNode key val = do
   s <- get
@@ -225,6 +246,7 @@ getMemoNode key = do
 
   return $ M.lookup key memoTable
 
+-- | Memoize the results of a computation (keyed by some unique ID)
 memoize :: (Eq a, Ord a, Hashable a) => a -> State (BDDState a b) b ->
             BDDContext a b b
 memoize uid act = do

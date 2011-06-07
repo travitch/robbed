@@ -1,31 +1,98 @@
 {-# OPTIONS_HADDOCK prune #-}
-module Data.ROBDD ( ROBDD
-                  , apply
-                  , applyExists
-                  , applyForAll
-                  , applyUnique
-                  , restrict
-                  , restrictAll
-                  , replace
-                  , anySat
-                  , satCount
-                  , allSat
-                  , allSat'
-                  , makeVar
-                  , makeTrue
-                  , makeFalse
-                  , and
-                  , or
-                  , xor
-                  , impl
-                  , biimpl
-                  , nand
-                  , nor
-                  , neg
-                  , exist
-                  , forAll
-                  , unique
-                  ) where
+-- | This package implements Reduced Ordered Binary Decision Diagrams
+-- (ROBDDs) in pure Haskell.  ROBDDs provide canonical representations
+-- of boolean formulas as directed acyclic graphs and have some very
+-- convenient properties:
+--
+--  * Tests for formula equality are fast
+--
+--  * The representation is compact for most reasonable formulas
+--    due to shared structure
+--
+-- The performance of ROBDDs is highly-dependent on the order chosen
+-- for variables.  In the worst case, an ROBDD can be exponential in
+-- the number of variables.  This package does not perform automatic
+-- variable reordering, though manual reordering through 'replace' is
+-- simple.
+--
+-- == Performance ==
+--
+-- This implementation uses pure Haskell and a simple linked
+-- representation (as opposed to more-common array-based
+-- implementations).  It performs well on reasonable BDDs of 70
+-- variables or so; there is still some performance tuning that is
+-- possible.  I will make it more efficient in the future.  It is
+-- probably not competitive with any of the mainstream BDD
+-- implementations, but I have not benchmarked it.
+--
+-- This package makes one significant design decision that sets it
+-- apart from many others: BDD nodes are only guaranteed to be unique
+-- within their own BDD.  Most other packages that I have seen give
+-- uniqueness across all BDDs.  The primary reason for this choice is
+-- to allow the RTS garbage collector to collect dead nodes without an
+-- additional reference counting mechanism (which seemed very
+-- difficult to implement in pure code).
+--
+-- This means that each BDD is still in canonical form.  There is some
+-- sharing between BDDs, but no guarantees about how much.  For
+-- example, the result of combining two BDDs via 'apply' can share
+-- nodes from either input BDD.
+--
+-- The downside of this is that equality tests are no longer constant
+-- time (tests for tautologies and contradictions still are, though).
+-- That said, they are at worst linear in the number of nodes in the
+-- BDD (as opposed to exponential for formulas in other formats).
+-- However, each BDD maintains its own structural hash.  If two BDDs
+-- that are /not/ equal are tested for equality, the test returns
+-- False in constant time (since the hashes will not match).
+-- Otherwise, the pessimistic test comparing all nodes proceeds as
+-- normal.
+--
+-- == Notes ==
+--
+-- This package really needs GHC's -funbox-strict-fields flag (set in the
+-- cabal file) to have reasonable memory usage.
+
+module Data.ROBDD (
+  -- * Types
+  ROBDD,
+  Var,
+  -- * Constants
+  makeTrue,
+  makeFalse,
+  makeVar,
+
+  -- * Operations
+
+  -- | These functions manipulate BDDs.
+  apply,
+  applyExists,
+  applyForAll,
+  applyUnique,
+  restrict,
+  restrictAll,
+  replace,
+  and,
+  or,
+  xor,
+  impl,
+  biimpl,
+  nand,
+  nor,
+  neg,
+  exist,
+  forAll,
+  unique,
+
+  -- * Solutions
+
+  -- | These functions extract satisfying solutions (or information
+  -- about them) from a BDD.
+  satCount,
+  anySat,
+  allSat,
+  allSat'
+  ) where
 
 import Prelude hiding (and, or)
 import Data.Foldable (toList)

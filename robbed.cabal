@@ -1,5 +1,5 @@
 name: robbed
-version: 0.1
+version: 0.1.0
 synopsis: A reduced ordered BDD package
 license: BSD3
 license-file: LICENSE
