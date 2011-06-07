@@ -48,6 +48,10 @@
 -- Otherwise, the pessimistic test comparing all nodes proceeds as
 -- normal.
 --
+-- The upside is that all BDDs are completely indepdenent and do not
+-- share any (mutable) state, so BDD operations can be run in parallel
+-- trivially.
+--
 -- == Notes ==
 --
 -- This package really needs GHC's @-funbox-strict-fields@ flag (set
