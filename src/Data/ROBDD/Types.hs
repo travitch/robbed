@@ -1,3 +1,4 @@
+{-# OPTIONS_HADDOCK not_home #-}
 {-# LANGUAGE NoMonomorphismRestriction, RankNTypes #-}
 module Data.ROBDD.Types ( BDD(..)
                         , ROBDD(..)
@@ -35,6 +36,8 @@ type Map = HashMap
 type RevMap = Map (Var, NodeId, NodeId) BDD
 
 type NodeId = Int
+
+-- | The type of BDD variables.
 type Var = Int
 
 -- | A type for a graph representation of a BDD.  This is used for
@@ -125,8 +128,8 @@ nodeVar (BDD _ v _ _ _) = v
 nodeVar _ = error "No variable for Zero or One"
 
 nodeUID :: BDD -> Int
-nodeUID Zero = (-1)
-nodeUID One = (-2)
+nodeUID Zero = -1
+nodeUID One = -2
 nodeUID (BDD _ _ _ uid _) = uid
 
 nodeHash :: BDD -> Int
@@ -178,10 +181,10 @@ bddEq b1 b2 =
     bddEq' Zero Zero = return True
     bddEq' One One = return True
     bddEq' (BDD low1 var1 high1 uid1 h1) (BDD low2 var2 high2 uid2 h2) =
-      memoize (uid1, uid2) $ do
+      memoize (uid1, uid2) $
         case h1 == h2 && var1 == var2 of
           False -> return False
-          -- ^ If the hashes at any level are not equal, we can exit
+          -- If the hashes at any level are not equal, we can exit
           -- early.
           True -> do
             l <- bddEq' low1 low2

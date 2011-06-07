@@ -1,3 +1,4 @@
+{-# OPTIONS_HADDOCK prune #-}
 module Data.ROBDD ( ROBDD
                   , apply
                   , applyExists
@@ -101,15 +102,15 @@ forAll bdd var = and (restrict bdd var True) (restrict bdd var False)
 
 -- | Construct a new BDD by applying the provided binary operator
 -- to the two input BDDs
---
--- Note: the reverse node maps of each input BDD are ignored because
--- we need to build a new one on the fly for the result BDD.
 apply :: (Bool -> Bool -> Bool) -> ROBDD -> ROBDD -> ROBDD
 apply op (ROBDD _ _ bdd1) (ROBDD _ _ bdd2) =
   let (bdd, s) = runBDDContext (applyInner op stdCtxt bdd1 bdd2) emptyBDDState
       -- FIXME: Remove unused bindings in the revmap to allow the
       -- runtime to GC unused nodes
   in ROBDD (bddRevMap s) (bddIdSource s) bdd
+-- Note: the reverse node maps of each input BDD are ignored because
+-- we need to build a new one on the fly for the result BDD.
+
 
 
 -- This is the main implementation of apply, but also re-used for the
@@ -119,7 +120,7 @@ applyInner :: BinBoolFunc -> EvaluationContext -> BDD -> BDD ->
 applyInner op ctxt bdd1 bdd2 = appBase bdd1 bdd2
   where
     appBase :: BDD -> BDD -> BDDContext (EvaluationContext, NodeId, NodeId) BDD BDD
-    appBase lhs rhs = memoize (ctxt, nodeUID lhs, nodeUID rhs) $ do
+    appBase lhs rhs = memoize (ctxt, nodeUID lhs, nodeUID rhs) $
       case maybeApply op lhs rhs of
         Just True -> return One
         Just False -> return Zero
@@ -178,7 +179,7 @@ genericApply quantifier op (ROBDD _ _ bdd1) (ROBDD _ _ bdd2) evars =
   where
     varSet = S.fromList evars
     appBase :: BDD -> BDD -> BDDContext (EvaluationContext, NodeId, NodeId) BDD BDD
-    appBase lhs rhs = memoize (stdCtxt, nodeUID lhs, nodeUID rhs) $ do
+    appBase lhs rhs = memoize (stdCtxt, nodeUID lhs, nodeUID rhs) $
       case maybeApply op lhs rhs of
         Just True -> return One
         Just False -> return Zero
@@ -188,10 +189,10 @@ genericApply quantifier op (ROBDD _ _ bdd1) (ROBDD _ _ bdd2) evars =
       (v', l', h') <- genApplySubproblems appBase lhs rhs
       case v' `S.member` varSet of
         False -> mk v' l' h'
-        -- ^ Standard case - we are not projecting out this variable
+        -- Standard case - we are not projecting out this variable
         -- so just let mk handle creating a new node if necessary
         True -> applyInner quantifier innerCtxt l' h'
-        -- ^ If this variable is to be quantified out, this magic is
+        -- If this variable is to be quantified out, this magic is
         -- due to McMillan 92; we quantify it out while we are
         -- building the tree via a call to or.  This re-uses the
         -- current BDD context and so does not use the top-level
@@ -210,8 +211,10 @@ genericApply quantifier op (ROBDD _ _ bdd1) (ROBDD _ _ bdd2) evars =
 -- quantification after the apply.
 applyExists :: (Bool -> Bool -> Bool) -> ROBDD -> ROBDD -> [Var] -> ROBDD
 applyExists = genericApply (||)
+
 applyUnique :: (Bool -> Bool -> Bool) -> ROBDD -> ROBDD -> [Var] -> ROBDD
 applyUnique = genericApply boolXor
+
 applyForAll :: (Bool -> Bool -> Bool) -> ROBDD -> ROBDD -> [Var] -> ROBDD
 applyForAll = genericApply (&&)
 
@@ -227,7 +230,7 @@ restrict (ROBDD revMap idSrc bdd) v b =
   where
     restrict' Zero = return Zero
     restrict' One = return One
-    restrict' o@(BDD low var high uid _) = memoize uid $ do
+    restrict' o@(BDD low var high uid _) = memoize uid $
       case var `compare` v of
         GT -> return o
         LT -> do
@@ -238,8 +241,8 @@ restrict (ROBDD revMap idSrc bdd) v b =
           True -> restrict' high
           False -> restrict' low
 
--- | restrict over a list of variable/value pairs.  This should be
--- more efficient than repeated calls to restrict.
+-- | restrict over a list of variable/value assignments.  This is more
+-- efficient than repeated calls to restrict.
 restrictAll :: ROBDD -> [(Var, Bool)] -> ROBDD
 restrictAll bdd@(ROBDD _ _ Zero) _ = bdd
 restrictAll bdd@(ROBDD _ _ One) _ = bdd
@@ -252,7 +255,7 @@ restrictAll (ROBDD revMap idSrc bdd) vals =
     valMap = M.fromList vals
     restrict' Zero = return Zero
     restrict' One = return One
-    restrict' (BDD low var high uid _) = memoize uid $ do
+    restrict' (BDD low var high uid _) = memoize uid $
       case var `M.lookup` valMap of
         Just b -> case b of
           True -> restrict' high
@@ -263,7 +266,10 @@ restrictAll (ROBDD revMap idSrc bdd) vals =
           mk var low' high'
 
 -- | Rename BDD variables according to the @mapping@ provided as an
--- alist.  This can be a potentially very expensive operation.  Note:
+-- alist.  This can be a potentially very expensive operation.
+--
+-- Note:
+--
 -- This function can throw an exception; this is ugly and I intend to
 -- convert the return type to Maybe ROBDD once I figure out how to
 -- determine that a rename will be 'bad'.
@@ -295,10 +301,10 @@ replace (ROBDD revMap idSrc bdd) mapping =
     -- here...
     fixSubgraph level uid low high
       | level `varBddCmp` low == LT && level `varBddCmp` high == LT =
-        {-memoize uid-} (mk level low high)
+        {-memoize uid-} mk level low high
       | level `varBddCmp` low == EQ || level `varBddCmp` high == EQ =
           error ("Bad replace at " ++ show level ++ "(fixing " ++ show low ++ " and " ++ show high ++ " : " ++ show mapping)
-      | otherwise = {-memoize uid $-} do
+      | otherwise = {-memoize uid $-}
         case low `bddCmp` high of
           EQ -> do
             l <- fixSubgraph level (nodeUID low) (lowEdge low) (lowEdge high)
@@ -315,10 +321,9 @@ replace (ROBDD revMap idSrc bdd) mapping =
 
 
 -- | negate the given BDD.  This implementation is somewhat more
--- efficient than the naiive translation to BDD -> False.
+-- efficient than the naiive translation to @BDD `impl` False@.
 -- Unfortunately, it isn't as much of an improvement as it could be
--- via destructive updates. FIXME: Implement constant-time negation
--- either via negation arcs or just a flag on the ROBDD structure
+-- via destructive updates.
 neg :: ROBDD -> ROBDD
 neg (ROBDD _ _ bdd) =
   -- Everything gets re-allocated so don't bother trying to re-use the
@@ -332,6 +337,8 @@ neg (ROBDD _ _ bdd) =
       low' <- negate' low
       high' <- negate' high
       mk var low' high'
+-- FIXME: Implement constant-time negation via a flag on the ROBDD
+-- structure
 
 -- | Count the number of satisfying assignments to the BDD.
 -- O(|v|)
@@ -402,11 +409,11 @@ allSat' (ROBDD _ _ bdd) activeVars =
     sat' (BDD low v high uid _) vs = memoize uid $ do
       let (lLocalVars, lLowerVars) = arbitraryVars vs v low
           (rLocalVars, rLowerVars) = arbitraryVars vs v high
-      -- ^ The localVars are those that can be arbitrary on their
+      -- The localVars are those that can be arbitrary on their
       -- respective branches.
       l <- sat' low lLowerVars
       r <- sat' high rLowerVars
-      -- ^ Computed the satisfying assignments for child trees - add in
+      -- Computed the satisfying assignments for child trees - add in
       -- corrections to each branch before adding the assignment for
       -- this variable
       let l' = addArbitrary lLocalVars l
@@ -450,9 +457,9 @@ mk v low high = do
       Nothing -> revInsert v low high
 
 -- Helpers for mk
-revLookup :: Var -> BDD -> BDD -> RevMap -> (Maybe BDD)
-revLookup v leftTarget rightTarget revMap = do
-  M.lookup (v, nodeUID leftTarget, nodeUID rightTarget) revMap
+revLookup :: Var -> BDD -> BDD -> RevMap -> Maybe BDD
+revLookup v leftTarget rightTarget =
+  M.lookup (v, nodeUID leftTarget, nodeUID rightTarget)
 
 hashNode :: Var -> BDD -> BDD -> Int
 hashNode v low high =
