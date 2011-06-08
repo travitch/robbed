@@ -186,7 +186,7 @@ nor = apply boolNotOr
 --
 -- > b[10/True] `or` b[10/False]
 --
--- (where 10/True means that True is substituted in for variable to).
+-- (where 10/True means that True is substituted in for variable 10).
 exist :: ROBDD -> Var -> ROBDD
 exist bdd var = or (restrict bdd var True) (restrict bdd var False)
 
