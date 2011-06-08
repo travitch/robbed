@@ -1,5 +1,5 @@
 import Control.Applicative
-import Data.List ( mapAccumL, foldl' )
+import Data.List ( mapAccumL, foldl', sort )
 import qualified Data.Map as M
 import qualified Data.Set as S
 import Data.Maybe ( fromJust, isJust )
@@ -98,6 +98,8 @@ tests :: [Test]
 tests = [ testGroup "Tautologies" (casifyTests "taut" tautologyTests)
         , testGroup "Contradictions" [ testCase "contra1" test_contra1
                                      ]
+        , testGroup "Misc" [ testCase "allSat' taut" test_allSatTaut
+                           ]
         , testGroup "Properties" [ testProperty "bddEq" prop_bddEq
                                  , testProperty "deMorgan" prop_deMorgan
                                  , testProperty "idempotentNegate" prop_bddNegIdemp
@@ -111,6 +113,16 @@ tests = [ testGroup "Tautologies" (casifyTests "taut" tautologyTests)
                                  , testProperty "allSat'Valid" prop_allSatPrimeValid
                                  ]
         ]
+
+test_allSatTaut :: Assertion
+test_allSatTaut =
+  assertEqual "allSat' tautology" (sort expected) (sort $ BDD.allSat' BDD.makeTrue [0, 1])
+  where
+    expected = [ [ (0, False), (1, False) ]
+               , [ (0, False), (1, True) ]
+               , [ (0, True), (1, False) ]
+               , [ (0, True), (1, True) ]
+               ]
 
 casifyTests :: String -> [Assertion] -> [Test]
 casifyTests pfx = snd . (mapAccumL casify 0)

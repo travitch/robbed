@@ -23,7 +23,10 @@
 -- variables or so; there is still some performance tuning that is
 -- possible.  I will make it more efficient in the future.  It is
 -- probably not competitive with any of the mainstream BDD
--- implementations, but I have not benchmarked it.
+-- implementations, but I have not benchmarked it.  The implementation
+-- uses dynamic programming in as many places as possible (except for
+-- parts of 'replace', which I haven't figured out how to memoize
+-- yet).
 --
 -- This package makes one significant design decision that sets it
 -- apart from many others: BDD nodes are only guaranteed to be unique
@@ -113,14 +116,14 @@ module Data.ROBDD (
   allSat'
   ) where
 
-import Prelude hiding (and, or)
-import Data.Foldable (toList)
-import Data.List (sort)
+import Prelude hiding ( and, or )
+import Data.Foldable ( toList )
+import Data.List ( sort )
 import qualified Data.HashMap.Strict as M
 import qualified Data.HashSet as S
 import Data.Hashable
 import qualified Data.Sequence as Seq
-import Data.Sequence ((><))
+import Data.Sequence ( Seq, (><) )
 
 import Data.ROBDD.BooleanFunctions
 import Data.ROBDD.Types
@@ -524,6 +527,8 @@ allSat (ROBDD _ _ bdd) =
 -- O(2^n)
 allSat' :: ROBDD -> [Int] -> [[(Var, Bool)]]
 allSat' (ROBDD _ _ Zero) _ = []
+allSat' (ROBDD _ _ One) activeVars =
+  toList $ addArbitrary activeVars (Seq.singleton [])
 allSat' (ROBDD _ _ bdd) activeVars =
   toList $ fst $ runBDDContext (sat' bdd vars) emptyBDDState
   where
@@ -550,14 +555,16 @@ allSat' (ROBDD _ _ bdd) activeVars =
     arbitraryVars vs vLocal (BDD _ vNext _ _ _) =
       let (local, lower) = span (<vNext) vs
       in (filter (/=vLocal) local, lower)
-    addArbitrary [] subsols = subsols
-    addArbitrary (v:vs) subsols =
-      let s' = addArbitrary vs subsols
-          l = fmap ((v, False):) s'
-          r = fmap ((v, True):) s'
-          -- ^ This value can be arbitrary, so add solutions for both
-          -- possible truth assignments.
-      in l >< r
+
+addArbitrary :: [Int] -> Seq [(Int, Bool)] -> Seq [(Int, Bool)]
+addArbitrary [] subsols = subsols
+addArbitrary (v:vs) subsols =
+  let s' = addArbitrary vs subsols
+      l = fmap ((v, False):) s'
+      r = fmap ((v, True):) s'
+      -- ^ This value can be arbitrary, so add solutions for both
+      -- possible truth assignments.
+  in l >< r
 
 -- TODO: compose
 
