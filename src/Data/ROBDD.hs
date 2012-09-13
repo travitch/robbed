@@ -632,4 +632,3 @@ stdCtxt = 1
 -- evaluations.  This is specifically for the fancy apply operations.
 innerCtxt :: EvaluationContext
 innerCtxt = 2
-

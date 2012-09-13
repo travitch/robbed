@@ -1,3 +1,4 @@
+module Main ( main ) where
 import Control.Applicative
 import Data.List ( mapAccumL, foldl', sort )
 import qualified Data.Map as M
@@ -9,7 +10,7 @@ import Test.Framework.Providers.QuickCheck2 ( testProperty )
 import Test.HUnit hiding ( Test, test )
 import Test.QuickCheck
 
-import Data.Bool.SimpleFormula
+import SimpleFormula
 import Data.ROBDD (ROBDD)
 import qualified Data.ROBDD as BDD
 
