@@ -85,7 +85,7 @@ instance Show BDD where
 data ROBDD = ROBDD RevMap [Int] BDD
 
 instance Show ROBDD where
-  show bdd = prettyPrint' $ graphToDot nonClusteredParams $ makeDAG bdd
+  show bdd = show $ graphToDot nonClusteredParams $ makeDAG bdd
 
 instance Eq BDD where
   Zero == Zero = True
@@ -101,9 +101,9 @@ instance Eq ROBDD where
   (ROBDD _ _ bdd1) == (ROBDD _ _ bdd2) = bdd1 == bdd2
 
 instance Labellable BDD where
-  toLabel Zero = toLabel "Zero"
-  toLabel One = toLabel "One"
-  toLabel (BDD _ v _ _ _) = toLabel $ show v
+  toLabelValue Zero = toLabelValue "Zero"
+  toLabelValue One = toLabelValue "One"
+  toLabelValue (BDD _ v _ _ _) = toLabelValue $ show v
 
 
 -- | This is not an 'Ord' instance because the EQ it returns is not the
@@ -261,6 +261,8 @@ memoize uid act = do
 runBDDContext :: State s a -> s -> (a, s)
 runBDDContext = runState
 
+getBDDState :: (MonadState s m) => m s
 getBDDState = get
 
+putBDDState :: (MonadState s m) => s -> m ()
 putBDDState = put

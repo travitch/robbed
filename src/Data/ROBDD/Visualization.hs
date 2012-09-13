@@ -12,7 +12,7 @@ viewBDD bdd = do
                                   , fmtEdge = \(_,_,l) -> [toLabel l]
                                   }
       dg = graphToDot params dag
-  s <- prettyPrint dg
+  let s = show dg
   putStrLn s
   _ <- runGraphvizCanvas' dg Gtk
   return ()
