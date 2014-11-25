@@ -596,7 +596,7 @@ revLookup v leftTarget rightTarget =
 -- uses the variable number and the hashes of the children.
 hashNode :: Var -> BDD -> BDD -> Int
 hashNode v low high =
-  v `combine` nodeHash low `combine` nodeHash high
+  v `hashWithSalt` nodeHash low `hashWithSalt` nodeHash high
 
 -- | Create a new node for v with the given high and low edges.
 -- Insert it into the revMap and return it.
