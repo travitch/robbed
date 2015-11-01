@@ -22,10 +22,13 @@ library
   default-language: Haskell2010
   hs-source-dirs: src
   exposed-modules: Data.ROBDD, Data.ROBDD.Visualization
-  build-depends: unordered-containers > 0.1.2,
-                 hashable, containers,
-                 base == 4.*, mtl == 2.*,
-                 fgl, graphviz >= 2999.17 && < 2999.18
+  build-depends: base == 4.*,
+                 containers,
+                 hashable,
+                 mtl == 2.*,
+                 unordered-containers > 0.2.3 && < 0.3,
+                 fgl >= 5.5 && < 5.6,
+                 graphviz >= 2999.18 && < 2999.19
   other-modules: Data.ROBDD.BooleanFunctions,
                  Data.ROBDD.Types
   ghc-options: -Wall -funbox-strict-fields
