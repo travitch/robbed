@@ -37,6 +37,9 @@ test-suite quant-tests
   default-language: Haskell2010
   type: exitcode-stdio-1.0
   main-is: QuantTests.hs
+  other-modules: SimpleFormula
+                 SimpleFormula.Parser
+                 SimpleFormula.Types
   hs-source-dirs: tests
   ghc-options: -Wall -funbox-strict-fields
   build-depends: robbed, containers,
